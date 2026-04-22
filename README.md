@@ -55,32 +55,41 @@ Abhängigkeiten: `fastapi`, `uvicorn`, `pyyaml`, `requests`, `pymodbus ≥ 3.0`
 
 > **Hinweis:** Ist Modbus einmal aktiviert, ist die Steuerung über die **eCHARGE+ App nicht mehr möglich**. Die Wallbox wird dann ausschließlich über den Modbus-Controller gesteuert.
 
-### Schritt 1 – WebConfig aufrufen
+### Schritt 1 – eBOX ins Heimnetz einbinden (eConfig App)
 
-1. Laptop direkt per LAN-Kabel mit **Port 8 (LAN 1 / RJ45)** der eBOX verbinden
-2. Laptop auf eine Adresse im Subnetz `192.168.0.x` konfigurieren (z. B. `192.168.0.10`)
-3. Browser öffnen: `http://192.168.0.244` (Standard-IP der eBOX)
-4. **PUK** eingeben – befindet sich auf der Rückseite der Betriebsanleitung
+Die Ersteinrichtung erfolgt über die **Compleo eConfig App** (Bluetooth), nicht über ein direktes LAN-Kabel.
 
-### Schritt 2 – Modbus TCP aktivieren
+1. **eConfig App** installieren: [iOS](https://apps.apple.com/us/app/econfig/id1455194196) / [Android](https://play.google.com/store/apps/details?id=com.innogy.econfiguration)
+2. Bluetooth am Smartphone aktivieren; WLAN und mobile Daten können aktiv bleiben
+3. An der eBOX den **Bluetooth-Knopf 3–5 Sekunden** gedrückt halten, bis er blinkt
+4. In der eConfig App mit der eBOX verbinden und **PUK** eingeben (Rückseite der Betriebsanleitung)
+5. Im Konfigurationsassistenten **WLAN-SSID und Passwort** eintragen (alternativ LAN)
+6. **Statische IP-Adresse aktivieren** und eine freie Adresse im Heimnetz vergeben (z. B. `192.168.1.50`) – diese IP wird später für Modbus und WebConfig benötigt
+7. Konfiguration abschließen und speichern
+
+### Schritt 2 – WebConfig aufrufen
+
+Nach der Einrichtung ist die eBOX ganz normal im Heimnetz erreichbar:
+
+1. Browser öffnen: `http://<statische-ip-der-ebox>` (die in Schritt 1 vergebene Adresse)
+2. Benutzername: **admin**, Passwort: **PUK** (Rückseite der Betriebsanleitung)
+
+### Schritt 3 – Modbus TCP aktivieren
 
 Im WebConfig-Menü die Modbus-TCP/IP-Kommunikation aktivieren. Die eBOX übernimmt dabei die Rolle des **Slave/Node** – der Controller (dieser Python-Dienst) ist der Master.
 
-### Schritt 3 – Lastmanagement konfigurieren
+### Schritt 4 – Lastmanagement konfigurieren
 
 1. Tab **[LDP1 Load Management]** öffnen
 2. Feld **„Control Computer"** auf **aktiv** setzen
 3. **Fallback-Strom** einstellen (empfohlen: 6–10 A) – wird verwendet, wenn der Controller nicht erreichbar ist
 4. Einstellungen speichern und eBOX neu starten
 
-### Schritt 4 – Netzwerk
-
-Der Mini-PC (Controller) muss über **Port 2a (LAN 2)** der eBOX oder das Heimnetz per Modbus TCP erreichbar sein (Standard-Port 502).
-
 #### Offizielle Compleo-Dokumentation
 
 | Dokument | Sprache |
 |---|---|
+| [eConfig App Bedienungsanleitung](https://www.compleo-charging.com/fileadmin/Documentcenter/eCONFIG_App/DE_eCONFIG_OpMan.pdf) | DE |
 | [Quick Guide – Modbus Energiemanagement](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/DE_Quickguide_eBOX_-_Modbus_Energiemanagement_20230814.pdf) | DE |
 | [Quick Guide – Modbus Energy Management](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/EN_Quickguide_eBOX_-_Modbus_energy_management_20230814.pdf) | EN |
 | [WebConfig Bedienungsanleitung](https://www.compleo-charging.com/fileadmin/Documentcenter/WebConfig/DE_WebConfig_OpMan.pdf) | DE |
