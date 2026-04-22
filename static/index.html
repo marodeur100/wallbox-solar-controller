@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wallbox Solar Controller</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.header-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-title svg { flex-shrink: 0; }
+
+.mode-toggle {
+  display: flex;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mode-btn {
+  padding: 7px 18px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.mode-btn.active { background: #1f6feb; color: #fff; }
+.mode-btn:hover:not(.active) { background: #21262d; color: #e6edf3; }
+
+/* ── Layout ── */
+main {
+  padding: 20px 24px 80px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ── Energy cards ── */
+.energy-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+@media (max-width: 860px) { .energy-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 520px)  { .energy-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px 14px 12px;
+  border-left-width: 3px;
+}
+.card-label {
+  font-size: 0.7rem;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.card-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.card-unit { font-size: 0.8rem; font-weight: 400; color: #8b949e; margin-left: 1px; }
+.card-sub  { font-size: 0.75rem; color: #8b949e; margin-top: 4px; }
+
+.c-pv     { border-left-color: #f0c020; }
+.c-load   { border-left-color: #a78bfa; }
+.c-export { border-left-color: #22c55e; }
+.c-import { border-left-color: #ef4444; }
+.c-grid   { border-left-color: #30363d; }
+.c-bat    { border-left-color: #3b82f6; }
+.c-soc    { border-left-color: #06b6d4; }
+
+.val-pv     { color: #f0c020; }
+.val-load   { color: #c4b5fd; }
+.val-export { color: #4ade80; }
+.val-import { color: #f87171; }
+.val-bat    { color: #60a5fa; }
+.val-soc    { color: #22d3ee; }
+
+/* ── Bottom two-column grid ── */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 680px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+/* ── Wallbox status ── */
+.status-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.status-table td { padding: 5px 0; font-size: 0.88rem; vertical-align: top; }
+.status-table td:first-child { color: #8b949e; padding-right: 8px; }
+.status-table td:last-child  { color: #e6edf3; font-weight: 500; }
+
+/* ── Control panel ── */
+.panel-title {
+  font-size: 0.7rem;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 14px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #21262d;
+  font-size: 0.88rem;
+}
+.info-row:last-of-type { border-bottom: none; }
+.info-label { color: #8b949e; }
+.info-val   { font-weight: 600; }
+.clr-ok  { color: #4ade80; }
+.clr-off { color: #f87171; }
+
+.reason-box {
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: #8b949e;
+  line-height: 1.5;
+  min-height: 36px;
+}
+
+/* ── Manual controls ── */
+.hidden { display: none !important; }
+
+.slider-wrap { margin: 14px 0 10px; }
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.slider-header .bounds { font-size: 0.78rem; color: #8b949e; }
+.slider-header .current-val { font-size: 1.3rem; font-weight: 700; color: #06b6d4; }
+
+input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  height: 5px;
+  background: #21262d;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #06b6d4;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: #06b6d4;
+  cursor: pointer;
+}
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.preset-btn {
+  padding: 5px 13px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.12s;
+}
+.preset-btn:hover { background: #30363d; }
+
+.action-row { display: flex; gap: 8px; margin-top: 14px; }
+.btn-apply {
+  flex: 1;
+  padding: 9px;
+  background: #238636;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.btn-apply:hover { background: #2ea043; }
+.btn-stop {
+  padding: 9px 14px;
+  background: #da3633;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.btn-stop:hover { background: #f85149; }
+
+/* ── Status bar ── */
+.status-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  padding: 9px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #8b949e;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.status-item { display: flex; align-items: center; gap: 6px; }
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+.dot-ok   { background: #22c55e; }
+.dot-warn { background: #f0c020; }
+.dot-err  { background: #ef4444; }
+
+/* ── Toast ── */
+#toast {
+  position: fixed;
+  top: 18px; right: 18px;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 9px 15px;
+  font-size: 0.83rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  z-index: 200;
+}
+#toast.show { opacity: 1; }
+#toast.ok  { border-left: 3px solid #22c55e; }
+#toast.err { border-left: 3px solid #ef4444; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f0c020" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+    </svg>
+    Wallbox Solar Controller
+  </div>
+  <div class="mode-toggle">
+    <button class="mode-btn" id="btn-manual" onclick="setMode('manual')">Manuell</button>
+    <button class="mode-btn active" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
+  </div>
+</header>
+
+<main>
+  <!-- Energy flow -->
+  <div class="energy-grid">
+    <div class="card c-pv">
+      <div class="card-label">PV-Erzeugung</div>
+      <div class="card-value val-pv" id="pv-val">—<span class="card-unit">W</span></div>
+    </div>
+    <div class="card c-load">
+      <div class="card-label">Verbrauch</div>
+      <div class="card-value val-load" id="load-val">—<span class="card-unit">W</span></div>
+    </div>
+    <div class="card c-grid" id="grid-card">
+      <div class="card-label">Netz</div>
+      <div class="card-value" id="grid-val">—<span class="card-unit">W</span></div>
+      <div class="card-sub" id="grid-sub"></div>
+    </div>
+    <div class="card c-bat">
+      <div class="card-label">Batterie</div>
+      <div class="card-value val-bat" id="bat-val">—<span class="card-unit">W</span></div>
+      <div class="card-sub" id="bat-sub"></div>
+    </div>
+    <div class="card c-soc">
+      <div class="card-label">Ladestand</div>
+      <div class="card-value val-soc" id="soc-val">—<span class="card-unit">%</span></div>
+    </div>
+  </div>
+
+  <!-- Wallbox + Control -->
+  <div class="bottom-grid">
+
+    <!-- Wallbox status -->
+    <div class="card c-bat" style="border-left-color:#06b6d4">
+      <div class="card-label">Wallbox Status</div>
+      <table class="status-table">
+        <tr><td>Ist-Strom L1 / L2 / L3</td><td id="wb-currents">—</td></tr>
+        <tr><td>Limit (aktiv)</td>          <td id="wb-limit">—</td></tr>
+        <tr><td>Fallback-Limit</td>          <td id="wb-fallback">—</td></tr>
+        <tr><td>Verfügbarkeit</td>           <td id="wb-avail">—</td></tr>
+      </table>
+    </div>
+
+    <!-- Control panel -->
+    <div class="card" style="border-left-color:#30363d">
+
+      <!-- Auto -->
+      <div id="auto-panel">
+        <div class="panel-title">PV-Überschuss Steuerung</div>
+        <div class="info-row">
+          <span class="info-label">PV-Überschuss (roh)</span>
+          <span class="info-val" id="surplus-raw">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">PV-Überschuss (geglättet)</span>
+          <span class="info-val" id="surplus-smooth">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Ladefreigabe</span>
+          <span class="info-val" id="charge-enabled">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Zielstrom</span>
+          <span class="info-val" id="target-amps">—</span>
+        </div>
+        <div class="reason-box" id="reason-box">Warte auf erste Messung…</div>
+      </div>
+
+      <!-- Manual -->
+      <div id="manual-panel" class="hidden">
+        <div class="panel-title">Manuelle Steuerung</div>
+        <div class="slider-wrap">
+          <div class="slider-header">
+            <span class="bounds">6 A</span>
+            <span class="current-val"><span id="slider-display">6.0</span> A</span>
+            <span class="bounds">16 A</span>
+          </div>
+          <input type="range" id="current-slider" min="6" max="16" step="0.5" value="6"
+            oninput="document.getElementById('slider-display').textContent = parseFloat(this.value).toFixed(1)">
+        </div>
+        <div class="presets">
+          <button class="preset-btn" onclick="setSlider(6)">6 A</button>
+          <button class="preset-btn" onclick="setSlider(8)">8 A</button>
+          <button class="preset-btn" onclick="setSlider(10)">10 A</button>
+          <button class="preset-btn" onclick="setSlider(13)">13 A</button>
+          <button class="preset-btn" onclick="setSlider(16)">16 A</button>
+        </div>
+        <div class="action-row">
+          <button class="btn-apply" onclick="applyManual()">Anwenden</button>
+          <button class="btn-stop"  onclick="stopCharging()">Stopp (0 A)</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Status bar -->
+<div class="status-bar">
+  <div class="status-item">
+    <div class="dot dot-warn" id="neoom-dot"></div>
+    <span>NEOOM: <strong id="neoom-status">—</strong></span>
+  </div>
+  <div class="status-item">
+    <div class="dot dot-warn" id="ebox-dot"></div>
+    <span>eBOX: <strong id="ebox-status">—</strong></span>
+  </div>
+  <div class="status-item">
+    <span>Letztes Update: <strong id="last-update">—</strong></span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function $(id) { return document.getElementById(id); }
+
+function setHTML(id, html) {
+  const el = $(id);
+  if (el) el.innerHTML = html;
+}
+
+function setText(id, text) {
+  const el = $(id);
+  if (el) el.textContent = text ?? '—';
+}
+
+function fmtW(v) {
+  if (v === null || v === undefined) return '—&thinsp;W';
+  return `${Math.abs(v).toFixed(0)}&thinsp;W`;
+}
+
+function fmtA(v) {
+  if (v === null || v === undefined) return '—';
+  return `${v.toFixed(1)}&thinsp;A`;
+}
+
+let _toastTimer = null;
+function showToast(msg, type = 'ok') {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { t.className = ''; }, 2800);
+}
+
+// ── UI update ─────────────────────────────────────────────────────────────────
+
+function updateUI(state) {
+  const n = state.neoom   || {};
+  const e = state.ebox    || {};
+  const d = state.decision || {};
+
+  // PV / Load / SoC
+  setHTML('pv-val',   `${fmtW(n.pv_power_w)}`);
+  setHTML('load-val', `${fmtW(n.load_power_w)}`);
+  const soc = n.battery_soc_pct;
+  setHTML('soc-val', soc != null ? `${soc.toFixed(0)}&thinsp;%` : '—');
+
+  // Grid (dynamic color)
+  const gw = n.grid_power_signed_w;
+  const gridCard = $('grid-card');
+  const gridVal  = $('grid-val');
+  if (gw != null) {
+    if (gw < -5) {
+      gridCard.className = 'card c-export';
+      gridVal.className  = 'card-value val-export';
+      gridVal.innerHTML  = `${fmtW(gw)}<span class="card-sub" style="margin-left:4px">↑ Einspeisung</span>`;
+    } else if (gw > 5) {
+      gridCard.className = 'card c-import';
+      gridVal.className  = 'card-value val-import';
+      gridVal.innerHTML  = `${fmtW(gw)}<span class="card-sub" style="margin-left:4px">↓ Bezug</span>`;
+    } else {
+      gridCard.className = 'card c-grid';
+      gridVal.className  = 'card-value';
+      gridVal.innerHTML  = '~&thinsp;0&thinsp;W';
+    }
+  } else {
+    gridCard.className = 'card c-grid';
+    gridVal.className  = 'card-value';
+    gridVal.innerHTML  = '—';
+  }
+
+  // Battery
+  const bw = n.battery_power_signed_w;
+  if (bw != null) {
+    setHTML('bat-val', fmtW(bw));
+    setText('bat-sub', bw > 5 ? '↑ Entladung' : bw < -5 ? '↓ Ladung' : 'Standby');
+  } else {
+    setHTML('bat-val', '—');
+    setText('bat-sub', '');
+  }
+
+  // Wallbox
+  setHTML('wb-currents', `${fmtA(e.current_l1)} / ${fmtA(e.current_l2)} / ${fmtA(e.current_l3)}`);
+  setHTML('wb-limit',    fmtA(e.limit_l1));
+  setHTML('wb-fallback', fmtA(e.fallback_l1));
+  const avail = e.availability;
+  setText('wb-avail', avail == null ? '—' : avail === 1 ? 'Bereit' : String(avail));
+
+  // Auto decision
+  if (d.reason !== undefined) {
+    const rawS  = d.surplus_w_raw     != null ? `${d.surplus_w_raw.toFixed(0)}&thinsp;W`     : '—';
+    const smS   = d.surplus_w_smoothed != null ? `${d.surplus_w_smoothed.toFixed(0)}&thinsp;W` : '—';
+    setHTML('surplus-raw',   rawS);
+    setHTML('surplus-smooth', smS);
+    const enabled = d.charge_enabled;
+    const ceEl = $('charge-enabled');
+    ceEl.textContent = enabled ? 'Ja' : 'Nein';
+    ceEl.className = `info-val ${enabled ? 'clr-ok' : 'clr-off'}`;
+    setHTML('target-amps', d.recommended_amps != null ? `${d.recommended_amps.toFixed(1)}&thinsp;A` : '—');
+    setText('reason-box', d.reason || '—');
+  }
+
+  // Connection dots
+  function updateDot(dotId, statusId, error, data) {
+    const dot = $(dotId);
+    if (error) {
+      dot.className = 'dot dot-err';
+      setText(statusId, 'Fehler');
+    } else if (data) {
+      dot.className = 'dot dot-ok';
+      setText(statusId, 'OK');
+    } else {
+      dot.className = 'dot dot-warn';
+      setText(statusId, 'Warte…');
+    }
+  }
+  updateDot('neoom-dot', 'neoom-status', state.neoom_error, state.neoom);
+  updateDot('ebox-dot',  'ebox-status',  state.ebox_error,  state.ebox);
+  setText('last-update', state.last_update || '—');
+
+  // Keep mode in sync if server restarts
+  if (state.mode && state.mode !== _currentMode) {
+    _currentMode = state.mode;
+    _applyModeUI(state.mode);
+  }
+}
+
+// ── Mode switching ────────────────────────────────────────────────────────────
+
+let _currentMode = 'auto';
+
+function _applyModeUI(mode) {
+  $('btn-auto').classList.toggle('active', mode === 'auto');
+  $('btn-manual').classList.toggle('active', mode === 'manual');
+  $('auto-panel').classList.toggle('hidden', mode !== 'auto');
+  $('manual-panel').classList.toggle('hidden', mode !== 'manual');
+}
+
+async function setMode(mode) {
+  if (mode === _currentMode) return;
+  _currentMode = mode;
+  _applyModeUI(mode);
+  try {
+    const r = await fetch('/api/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    showToast(mode === 'auto' ? 'Automatik-Modus aktiv' : 'Manueller Modus aktiv');
+  } catch (err) {
+    showToast(`Fehler: ${err.message}`, 'err');
+  }
+}
+
+// ── Manual controls ───────────────────────────────────────────────────────────
+
+function setSlider(v) {
+  $('current-slider').value = v;
+  $('slider-display').textContent = v.toFixed(1);
+}
+
+async function applyManual() {
+  const amps = parseFloat($('current-slider').value);
+  try {
+    const r = await fetch('/api/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amps }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    showToast(`${amps.toFixed(1)} A gesetzt`);
+  } catch (err) {
+    showToast(`Fehler: ${err.message}`, 'err');
+  }
+}
+
+async function stopCharging() {
+  if (!confirm('Wirklich Ladung stoppen (0 A auf alle drei Phasen)?')) return;
+  try {
+    const r = await fetch('/api/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amps: 0.0 }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    showToast('Ladung gestoppt');
+  } catch (err) {
+    showToast(`Fehler: ${err.message}`, 'err');
+  }
+}
+
+// ── SSE connection ────────────────────────────────────────────────────────────
+
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = (ev) => {
+    try { updateUI(JSON.parse(ev.data)); } catch (_) {}
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+connectSSE();
+</script>
+</body>
+</html>

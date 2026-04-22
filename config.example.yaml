@@ -1,0 +1,26 @@
+# Wallbox Solar Controller – Konfiguration
+# Kopiere diese Datei nach config.yaml und trage deine Werte ein.
+# config.yaml wird NICHT ins Git eingecheckt.
+
+neoom:
+  beaam_host: "192.168.x.x"       # IP-Adresse des BEAAM-Systems
+  api_key: "DEIN_API_KEY_HIER"    # Bearer Token für die BEAAM API
+
+ebox:
+  host: "192.168.0.244"           # IP-Adresse der eBOX Wallbox
+  port: 502                       # Modbus TCP Port (Standard: 502)
+  unit_id: 1                      # Modbus Unit ID
+  fallback_amps: 6.0              # Fallback-Ladestrom bei Controller-Ausfall (A)
+
+controller:
+  reserve_w: 300                  # Reserve (W), die nie für die Wallbox genutzt wird
+  smoothing_alpha: 0.35           # Glättungsfaktor (0.0 = träge … 1.0 = sofort)
+  start_margin_w: 500             # Zusatz-Puffer über Mindeststrom zum Starten (W)
+  stop_margin_w: 700              # Puffer unter Mindeststrom zum Stoppen (W)
+  stop_hold_cycles: 6             # Zyklen unter Stoppschwelle bevor gestoppt wird
+  max_step_a: 1.0                 # Maximale Stromänderung pro Zyklus (A)
+
+server:
+  host: "0.0.0.0"                 # Auf allen Interfaces lauschen (für Mini PC)
+  port: 8000                      # Web-Interface Port
+  poll_interval_s: 30             # Abfrageintervall NEOOM (Sekunden)
