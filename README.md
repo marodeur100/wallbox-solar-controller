@@ -1,0 +1,223 @@
+# Wallbox Solar Controller
+
+PV-Überschussladen für die **Compleo eBOX Smart/Professional** mit einem **NEOOM BEAAM**-System. Webbasiertes Dashboard mit automatischem Lastmanagement und manueller Steuerung – gedacht für den Betrieb auf einem Mini-PC im Heimnetz.
+
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
+
+---
+
+## Wie es funktioniert
+
+```
+NEOOM BEAAM ──HTTP──► Controller (Python) ──Modbus TCP──► Compleo eBOX Smart
+                              │
+                         FastAPI + SSE
+                              │
+                         Browser (Web-UI)
+```
+
+Alle 30 Sekunden werden die Energiefluss-Daten vom NEOOM-System abgerufen (PV-Produktion, Verbrauch, Netz, Batterie). Im **Automatik-Modus** berechnet der Controller daraus den optimalen Ladestrom und schreibt ihn per Modbus TCP direkt auf die Wallbox. Im **Manuell-Modus** kann der Ladestrom frei über das Web-Interface gesetzt werden.
+
+### Regellogik (Automatik-Modus)
+
+- **Glättung:** Exponentiell gewichteter Mittelwert verhindert Sprünge durch kurze Wolken
+- **Hysterese:** Separater Start- und Stoppschwellwert – kein ständiges Ein-/Ausschalten
+- **Rampe:** Maximale Stromänderung pro Zyklus begrenzt (kein harter Sprung)
+- **Haltezeit:** Erst nach `N` Zyklen unter der Stoppschwelle wird die Ladung beendet
+- **Reserve:** Konfigurierbarer Puffer, der nicht für die Wallbox verwendet wird
+
+---
+
+## Voraussetzungen
+
+### Hardware
+
+| Komponente | Anforderung |
+|---|---|
+| Compleo eBOX Smart oder Professional | Firmware **≥ 1.3.0** |
+| NEOOM BEAAM (Energiemanagementsystem) | API-Zugang (Bearer Token) |
+| Mini-PC / Raspberry Pi | Python 3.10+, LAN-Anschluss |
+| Netzwerk | Controller, eBOX und BEAAM im gleichen Subnetz |
+
+### Software
+
+```bash
+pip install -r requirements.txt
+```
+
+Abhängigkeiten: `fastapi`, `uvicorn`, `pyyaml`, `requests`, `pymodbus ≥ 3.0`
+
+---
+
+## Compleo eBOX: Modbus & Lastmanagement einrichten
+
+> **Hinweis:** Ist Modbus einmal aktiviert, ist die Steuerung über die **eCHARGE+ App nicht mehr möglich**. Die Wallbox wird dann ausschließlich über den Modbus-Controller gesteuert.
+
+### Schritt 1 – WebConfig aufrufen
+
+1. Laptop direkt per LAN-Kabel mit **Port 8 (LAN 1 / RJ45)** der eBOX verbinden
+2. Laptop auf eine Adresse im Subnetz `192.168.0.x` konfigurieren (z. B. `192.168.0.10`)
+3. Browser öffnen: `http://192.168.0.244` (Standard-IP der eBOX)
+4. **PUK** eingeben – befindet sich auf der Rückseite der Betriebsanleitung
+
+### Schritt 2 – Modbus TCP aktivieren
+
+Im WebConfig-Menü die Modbus-TCP/IP-Kommunikation aktivieren. Die eBOX übernimmt dabei die Rolle des **Slave/Node** – der Controller (dieser Python-Dienst) ist der Master.
+
+### Schritt 3 – Lastmanagement konfigurieren
+
+1. Tab **[LDP1 Load Management]** öffnen
+2. Feld **„Control Computer"** auf **aktiv** setzen
+3. **Fallback-Strom** einstellen (empfohlen: 6–10 A) – wird verwendet, wenn der Controller nicht erreichbar ist
+4. Einstellungen speichern und eBOX neu starten
+
+### Schritt 4 – Netzwerk
+
+Der Mini-PC (Controller) muss über **Port 2a (LAN 2)** der eBOX oder das Heimnetz per Modbus TCP erreichbar sein (Standard-Port 502).
+
+#### Offizielle Compleo-Dokumentation
+
+| Dokument | Sprache |
+|---|---|
+| [Quick Guide – Modbus Energiemanagement](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/DE_Quickguide_eBOX_-_Modbus_Energiemanagement_20230814.pdf) | DE |
+| [Quick Guide – Modbus Energy Management](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/EN_Quickguide_eBOX_-_Modbus_energy_management_20230814.pdf) | EN |
+| [WebConfig Bedienungsanleitung](https://www.compleo-charging.com/fileadmin/Documentcenter/WebConfig/DE_WebConfig_OpMan.pdf) | DE |
+| [WebConfig Operations Manual](https://www.compleo-charging.com/fileadmin/Documentcenter/WebConfig/WebConfig_OpMan_EN_2002308.pdf) | EN |
+| [Quick Guide – Onboard Load Management](https://www.compleo-charging.com/fileadmin/Documentcenter/Loadmanagement/EN_Quickguide_eBOX_onboard_load_management_20231121.pdf) | EN |
+
+---
+
+## Installation & Konfiguration
+
+### 1. Repository klonen
+
+```bash
+git clone https://github.com/marodeur100/wallbox-solar-controller.git
+cd wallbox-solar-controller
+pip install -r requirements.txt
+```
+
+### 2. Konfigurationsdatei anlegen
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+`config.yaml` bearbeiten:
+
+```yaml
+neoom:
+  beaam_host: "192.168.x.x"       # IP-Adresse des NEOOM BEAAM
+  api_key: "DEIN_API_KEY_HIER"    # Bearer Token (NEOOM-App → Einstellungen → API)
+
+ebox:
+  host: "192.168.0.244"           # IP-Adresse der Compleo eBOX
+  port: 502                       # Modbus TCP Port (Standard)
+  unit_id: 1                      # Modbus Unit ID
+  fallback_amps: 6.0              # Sicherheits-Fallback bei Controller-Ausfall
+
+controller:
+  reserve_w: 300                  # Leistungsreserve, die nicht für die Wallbox genutzt wird
+  smoothing_alpha: 0.35           # Glättungsfaktor (0 = träge, 1 = sofort)
+  start_margin_w: 500             # Puffer über Mindeststrom zum Starten
+  stop_margin_w: 700              # Puffer unter Mindeststrom zum Stoppen
+  stop_hold_cycles: 6             # Zyklen unter Stoppschwelle vor dem Stoppen
+  max_step_a: 1.0                 # Maximale Stromänderung pro Zyklus (A)
+
+server:
+  host: "0.0.0.0"                 # Alle Netzwerkschnittstellen
+  port: 8000
+  poll_interval_s: 30             # Abfrageintervall in Sekunden
+```
+
+> `config.yaml` ist in `.gitignore` – Credentials landen nie im Repository.
+
+### 3. Starten
+
+```bash
+python main.py
+```
+
+Web-Interface aufrufen: `http://<ip-des-mini-pc>:8000`
+
+---
+
+## Projektstruktur
+
+```
+wallbox-solar-controller/
+├── main.py               # FastAPI-App: Polling-Loop, SSE-Stream, REST-API
+├── controller.py         # Regellogik: Überschuss → Ladestrom
+├── neoom_client.py       # NEOOM BEAAM HTTP-Client + Metrik-Parser
+├── ebox_client.py        # Compleo eBOX Modbus TCP-Client
+├── config.example.yaml   # Konfigurationsvorlage
+├── requirements.txt
+└── static/
+    └── index.html        # Web-Dashboard (kein externes Framework)
+```
+
+---
+
+## Modbus-Register der eBOX (Referenz)
+
+| Register | Typ | Beschreibung |
+|---|---|---|
+| 1006 / 1008 / 1010 | FLOAT32 | Ist-Strom L1 / L2 / L3 (A) |
+| 1012 / 1014 / 1016 | FLOAT32 | MaxCurrentPhase L1 / L2 / L3 – aktives Limit (A) |
+| 1018 / 1020 / 1022 | FLOAT32 | FallbackMaxCurrent L1 / L2 / L3 (A) |
+| 1025 / 1026 / 1027 | UINT16 | Phasenmapping L1 / L2 / L3 |
+| 1028 | UINT16 | Verfügbarkeit (1 = Bereit) |
+
+FLOAT32-Werte belegen je zwei aufeinanderfolgende Register (Big-Endian). Der Controller schreibt alle drei Phasen-Register immer gemeinsam in einer einzigen Modbus-Transaktion.
+
+---
+
+## API-Endpunkte
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Web-Dashboard |
+| `GET` | `/api/state` | Aktueller Zustand als JSON |
+| `GET` | `/api/stream` | Server-Sent Events (Live-Updates) |
+| `POST` | `/api/mode` | Modus setzen: `{"mode": "auto"}`  oder `{"mode": "manual"}` |
+| `POST` | `/api/manual` | Ladestrom setzen: `{"amps": 10.5}` (0–16 A) |
+
+---
+
+## Autostart (systemd, Linux/Mini-PC)
+
+```ini
+# /etc/systemd/system/wallbox-controller.service
+[Unit]
+Description=Wallbox Solar Controller
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/wallbox-solar-controller
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now wallbox-controller
+```
+
+---
+
+## Hinweise
+
+- Die eBOX Smart wird seit März 2023 nicht mehr produziert; die eBOX Professional ist der Nachfolger und verwendet das gleiche Modbus-Interface.
+- Der NEOOM API-Key ist in der NEOOM-App unter **Einstellungen → Integrationen → API** zu finden.
+- Minimaler Ladestrom der eBOX ist 6 A (dreiphasig = 4 140 W). Unter diesem Wert stoppt der Controller die Ladung statt auf 0 zu regeln.
+
+---
+
+## Lizenz
+
+MIT
