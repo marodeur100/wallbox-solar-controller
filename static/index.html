@@ -290,8 +290,8 @@ input[type="range"]::-moz-range-thumb {
     Wallbox Solar Controller
   </div>
   <div class="mode-toggle">
-    <button class="mode-btn" id="btn-manual" onclick="setMode('manual')">Manuell</button>
-    <button class="mode-btn active" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
+    <button class="mode-btn active" id="btn-manual" onclick="setMode('manual')">Manuell</button>
+    <button class="mode-btn" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
   </div>
 </header>
 
@@ -340,7 +340,7 @@ input[type="range"]::-moz-range-thumb {
     <div class="card" style="border-left-color:#30363d">
 
       <!-- Auto -->
-      <div id="auto-panel">
+      <div id="auto-panel" class="hidden">
         <div class="panel-title">PV-Überschuss Steuerung</div>
         <div class="info-row">
           <span class="info-label">PV-Überschuss (roh)</span>
@@ -362,7 +362,7 @@ input[type="range"]::-moz-range-thumb {
       </div>
 
       <!-- Manual -->
-      <div id="manual-panel" class="hidden">
+      <div id="manual-panel">
         <div class="panel-title">Manuelle Steuerung</div>
         <div class="slider-wrap">
           <div class="slider-header">
@@ -538,7 +538,7 @@ function updateUI(state) {
 
 // ── Mode switching ────────────────────────────────────────────────────────────
 
-let _currentMode = 'auto';
+let _currentMode = 'manual';
 
 function _applyModeUI(mode) {
   $('btn-auto').classList.toggle('active', mode === 'auto');

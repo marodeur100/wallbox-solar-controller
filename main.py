@@ -45,7 +45,7 @@ MAX_A = 16.0
 # ---------------------------------------------------------------------------
 
 app_state: Dict[str, Any] = {
-    "mode": "auto",       # "auto" | "manual"
+    "mode": "manual",     # "auto" | "manual" – startet immer manuell
     "neoom": None,
     "ebox": None,
     "decision": None,
