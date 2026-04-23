@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import os
+import threading
 import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException, Request
@@ -268,6 +270,15 @@ async def set_manual(req: ManualRequest):
         app_state["ebox"] = ebox_status
     await _broadcast()
     return {"amps": req.amps}
+
+
+@app.post("/api/shutdown")
+async def shutdown():
+    def _exit():
+        time.sleep(0.4)  # Antwort erst senden lassen, dann beenden
+        os._exit(0)
+    threading.Thread(target=_exit, daemon=True).start()
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

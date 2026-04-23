@@ -261,6 +261,73 @@ input[type="range"]::-moz-range-thumb {
 .dot-warn { background: #f0c020; }
 .dot-err  { background: #ef4444; }
 
+/* ── Exit button ── */
+.btn-exit {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid #6e3a3a;
+  border-radius: 8px;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-exit:hover { background: #3a1a1a; border-color: #f87171; }
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+.modal-box {
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 28px 28px 22px;
+  max-width: 420px;
+  width: 90%;
+}
+.modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.modal-body {
+  font-size: 0.88rem;
+  color: #8b949e;
+  line-height: 1.55;
+  margin-bottom: 22px;
+}
+.modal-buttons { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-btn-yes {
+  padding: 8px 18px;
+  background: #da3633;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.modal-btn-yes:hover { background: #f85149; }
+.modal-btn-no {
+  padding: 8px 18px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 7px;
+  color: #e6edf3;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.modal-btn-no:hover { background: #30363d; }
+
 /* ── Toast ── */
 #toast {
   position: fixed;
@@ -289,11 +356,26 @@ input[type="range"]::-moz-range-thumb {
     </svg>
     Wallbox Solar Controller
   </div>
-  <div class="mode-toggle">
-    <button class="mode-btn active" id="btn-manual" onclick="setMode('manual')">Manuell</button>
-    <button class="mode-btn" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-manual" onclick="setMode('manual')">Manuell</button>
+      <button class="mode-btn" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
+    </div>
+    <button class="btn-exit" onclick="requestShutdown()">Beenden</button>
   </div>
 </header>
+
+<!-- Shutdown modal -->
+<div class="modal-overlay hidden" id="shutdown-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title">Anwendung beenden</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-buttons">
+      <button class="modal-btn-no"  id="modal-no">Abbrechen</button>
+      <button class="modal-btn-yes" id="modal-yes">Ja, beenden</button>
+    </div>
+  </div>
+</div>
 
 <main>
   <!-- Energy flow -->
@@ -446,6 +528,7 @@ function showToast(msg, type = 'ok') {
 // ── UI update ─────────────────────────────────────────────────────────────────
 
 function updateUI(state) {
+  _lastState = state;
   const n = state.neoom   || {};
   const e = state.ebox    || {};
   const d = state.decision || {};
@@ -599,6 +682,52 @@ async function stopCharging() {
   } catch (err) {
     showToast(`Fehler: ${err.message}`, 'err');
   }
+}
+
+// ── Shutdown ──────────────────────────────────────────────────────────────────
+
+let _lastState = null;
+let _modalYesFn = null;
+
+function _showModal(title, body, yesFn) {
+  $('modal-title').textContent = title;
+  $('modal-body').textContent  = body;
+  $('shutdown-modal').classList.remove('hidden');
+  _modalYesFn = yesFn;
+}
+
+$('modal-no').onclick  = () => $('shutdown-modal').classList.add('hidden');
+$('modal-yes').onclick = () => { $('shutdown-modal').classList.add('hidden'); if (_modalYesFn) _modalYesFn(); };
+
+async function requestShutdown() {
+  const ebox      = _lastState?.ebox;
+  const limitAmps = ebox?.limit_l1;
+  const isCharging = limitAmps != null && limitAmps > 0.5;
+
+  if (isCharging) {
+    if (_currentMode !== 'manual') await setMode('manual');
+    _showModal(
+      'Ladevorgang aktiv',
+      `Aktuell sind ${limitAmps.toFixed(1)} A eingestellt. ` +
+      `Einstellung beibehalten und Anwendung beenden? ` +
+      `(Die eBOX fällt danach auf den konfigurierten Fallback-Strom zurück, sobald die Verbindung getrennt wird.)`,
+      doShutdown
+    );
+  } else {
+    _showModal(
+      'Anwendung beenden',
+      'Controller wirklich beenden? Die eBOX behält den zuletzt gesetzten Wert bis zum nächsten Start.',
+      doShutdown
+    );
+  }
+}
+
+async function doShutdown() {
+  try { await fetch('/api/shutdown', { method: 'POST' }); } catch {}
+  document.body.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;' +
+    'height:100vh;background:#0d1117;color:#8b949e;font-family:sans-serif;font-size:1rem;">' +
+    'Anwendung wurde beendet. Fenster kann geschlossen werden.</div>';
 }
 
 // ── SSE connection ────────────────────────────────────────────────────────────
