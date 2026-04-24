@@ -27,6 +27,8 @@ Alle 30 Sekunden werden die Energiefluss-Daten vom NEOOM-System abgerufen (PV-Pr
 - **Rampe:** Maximale Stromänderung pro Zyklus begrenzt (kein harter Sprung)
 - **Haltezeit:** Erst nach `N` Zyklen unter der Stoppschwelle wird die Ladung beendet
 - **Reserve:** Konfigurierbarer Puffer, der nicht für die Wallbox verwendet wird
+- **Feedback-Kompensation:** Der aktuell gesetzte Ladestrom wird beim Lesen des Überschusses wieder hinzuaddiert, da die Wallbox-Last bereits im gemessenen Hausverbrauch enthalten ist. Ohne diese Korrektur würde der Controller seinen eigenen Ladestrom als „fehlenden Überschuss" interpretieren und die Ladung sofort wieder stoppen.
+- **Nahtloser Moduswechsel:** Beim Umschalten von Manuell auf Automatik übernimmt der Controller den aktuell aktiven Ladestrom als Startwert, sodass eine laufende Ladung nicht unterbrochen wird.
 
 ---
 
@@ -171,15 +173,17 @@ wallbox-solar-controller/
 
 ## Modbus-Register der eBOX (Referenz)
 
-| Register | Typ | Beschreibung |
-|---|---|---|
-| 1006 / 1008 / 1010 | FLOAT32 | Ist-Strom L1 / L2 / L3 (A) |
-| 1012 / 1014 / 1016 | FLOAT32 | MaxCurrentPhase L1 / L2 / L3 – aktives Limit (A) |
-| 1018 / 1020 / 1022 | FLOAT32 | FallbackMaxCurrent L1 / L2 / L3 (A) |
-| 1025 / 1026 / 1027 | UINT16 | Phasenmapping L1 / L2 / L3 |
-| 1028 | UINT16 | Verfügbarkeit (1 = Bereit) |
+| Register | Typ | Funktion | Zugriff |
+|---|---|---|---|
+| 1006 / 1008 / 1010 | FLOAT32 | Ist-Strom L1 / L2 / L3 (A) | **Input Register (FC4)** – nur lesen |
+| 1012 / 1014 / 1016 | FLOAT32 | MaxCurrentPhase L1 / L2 / L3 – aktives Limit (A) | Holding Register (FC3) – lesen/schreiben |
+| 1018 / 1020 / 1022 | FLOAT32 | FallbackMaxCurrent L1 / L2 / L3 (A) | Holding Register (FC3) – lesen/schreiben |
+| 1025 / 1026 / 1027 | UINT16 | Phasenmapping L1 / L2 / L3 | Holding Register (FC3) – nur lesen |
+| 1028 | UINT16 | Verfügbarkeit (1 = Bereit) | Holding Register (FC3) – nur lesen |
 
 FLOAT32-Werte belegen je zwei aufeinanderfolgende Register (Big-Endian). Der Controller schreibt alle drei Phasen-Register immer gemeinsam in einer einzigen Modbus-Transaktion.
+
+> **Wichtig:** Die Ist-Strom-Register (1006/1008/1010) sind bei der eBOX **Input Registers (Modbus FC4)**, nicht Holding Registers (FC3). Ein Leseversuch mit FC3 liefert `exception_code=2` (Illegal Data Address). Der eBOX-Client liest diese Register daher mit `read_input_registers()`.
 
 ---
 
