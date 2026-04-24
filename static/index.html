@@ -22,7 +22,8 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 .header-title {
   font-size: 1.1rem;
@@ -30,8 +31,16 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 .header-title svg { flex-shrink: 0; }
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 .mode-toggle {
   display: flex;
@@ -39,10 +48,9 @@ header {
   border: 1px solid #30363d;
   border-radius: 8px;
   overflow: hidden;
-  flex-shrink: 0;
 }
 .mode-btn {
-  padding: 7px 18px;
+  padding: 7px 14px;
   border: none;
   background: transparent;
   color: #8b949e;
@@ -54,6 +62,12 @@ header {
 }
 .mode-btn.active { background: #1f6feb; color: #fff; }
 .mode-btn:hover:not(.active) { background: #21262d; color: #e6edf3; }
+@media (max-width: 480px) {
+  header { padding: 10px 14px; }
+  .header-controls { width: 100%; justify-content: space-between; }
+  .mode-btn { padding: 6px 10px; font-size: 0.8rem; }
+  .btn-exit { padding: 6px 10px; font-size: 0.8rem; }
+}
 
 /* ── Layout ── */
 main {
@@ -356,7 +370,7 @@ input[type="range"]::-moz-range-thumb {
     </svg>
     Wallbox Solar Controller
   </div>
-  <div style="display:flex;align-items:center;gap:10px;">
+  <div class="header-controls">
     <div class="mode-toggle">
       <button class="mode-btn active" id="btn-manual" onclick="setMode('manual')">Manuell</button>
       <button class="mode-btn" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>

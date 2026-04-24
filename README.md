@@ -6,6 +6,8 @@ PV-Überschussladen für die **Compleo eBOX Smart/Professional** mit einem **NEO
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
+![Dashboard Screenshot](docs/screenshot.png)
+
 ---
 
 ## Wie es funktioniert
