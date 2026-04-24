@@ -12,7 +12,7 @@ import threading
 import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import neoom_client
@@ -209,6 +209,21 @@ app = FastAPI(title="Wallbox Solar Controller", lifespan=lifespan)
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return HTMLResponse((Path("static") / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    return FileResponse(Path("static") / "favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+async def favicon_svg():
+    return FileResponse(Path("static") / "favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/favicon.png", include_in_schema=False)
+async def favicon_png():
+    return FileResponse(Path("static") / "favicon.png", media_type="image/png")
 
 
 @app.get("/api/state")
