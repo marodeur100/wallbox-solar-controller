@@ -74,14 +74,56 @@ class Modbus:
             return round(struct.unpack(">f", resp[2:6])[0], 2)
         return None
 
-    def write_f32_x3(self, addr: int, value: float) -> bool:
-        """Schreibt denselben Float-Wert auf 3 aufeinanderfolgende Phasen-Register."""
-        with self._lock:
+    def write_f32_x3(self, host: str, port: int, unit: int,
+                     addr: int, value: float) -> tuple:
+        """Fresh TCP connection per write to avoid shared-socket race with the poll loop.
+        Returns (success: bool, error_msg: str | None)."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(5.0)
+            s.connect((host, port))
+
             raw  = struct.pack(">f", float(value))
-            data = raw * 3          # 3 Phasen x 4 Bytes = 12 Bytes = 6 Register
+            data = raw * 3      # L1, L2, L3 – je 4 Bytes = 6 Register
             pdu  = struct.pack(">BHHB", 0x10, addr, 6, 12) + data
-            resp = self._req(pdu)
-            return resp is not None and resp[0] == 0x10
+            mbap = struct.pack(">HHHB", 1, 0, len(pdu) + 1, unit)
+            s.sendall(mbap + pdu)
+
+            hdr = b""
+            while len(hdr) < 7:
+                chunk = s.recv(7 - len(hdr))
+                if not chunk:
+                    break
+                hdr += chunk
+
+            if len(hdr) < 7:
+                s.close()
+                return False, "Keine Antwort vom Gerät"
+
+            n = struct.unpack(">H", hdr[4:6])[0] - 1
+            resp = b""
+            while len(resp) < n:
+                chunk = s.recv(n - len(resp))
+                if not chunk:
+                    break
+                resp += chunk
+
+            s.close()
+
+            if resp and resp[0] == 0x10:
+                return True, None
+            elif resp and resp[0] == 0x90:
+                exc = resp[1] if len(resp) > 1 else 0
+                codes = {1: "Ungültige Funktion", 2: "Ungültige Adresse",
+                         3: "Ungültiger Wert", 4: "Gerätefehler"}
+                return False, f"Modbus Exception {exc}: {codes.get(exc, '?')}"
+            else:
+                fc = f"{resp[0]:02X}" if resp else "?"
+                return False, f"Unerwarteter FC: {fc}"
+        except socket.timeout:
+            return False, "Timeout – Gerät nicht erreichbar?"
+        except Exception as e:
+            return False, str(e)
 
     def read_u16_fc3(self, addr: int):
         resp = self._rr(0x03, addr, 1)
@@ -540,9 +582,10 @@ class WallboxApp(App):
         self.modbus   = Modbus()
         self.sel_amps = 6.0
         self._poll    = None
-        self._host    = '192.168.0.244'
-        self._unit    = 1
-        self._backend = ''
+        self._host         = '192.168.0.244'
+        self._modbus_port  = 502
+        self._unit         = 1
+        self._backend      = ''
         sm = ScreenManager()
         sm.add_widget(MainScreen())
         sm.add_widget(SettingsScreen())
@@ -751,22 +794,20 @@ class WallboxApp(App):
             except Exception:
                 pass
 
-        try:
-            ok = self.modbus.write_f32_x3(1012, amps)
-        except Exception:
-            ok = False
-        self._after_apply(ok, amps, backend_switched)
+        ok, err = self.modbus.write_f32_x3(
+            self._host, self._modbus_port, self._unit, 1012, amps)
+        self._after_apply(ok, amps, backend_switched, err)
 
     @mainthread
-    def _after_apply(self, ok: bool, amps: float, backend_switched: bool):
+    def _after_apply(self, ok: bool, amps: float, backend_switched: bool, err=None):
         try:
             ids = self.root.get_screen('main').ids
             if ok:
                 base = f'{amps:.1f} A gesetzt' if amps > 0 else 'Ladung gestoppt'
                 ids.lbl_hint.text = base + ('  (Backend -> Manuell)' if backend_switched else '')
             else:
-                ids.lbl_hint.text = 'Fehler beim Schreiben'
-            Clock.schedule_once(lambda dt: self._clear_hint(), 4)
+                ids.lbl_hint.text = f'Fehler: {err or "?"}'
+            Clock.schedule_once(lambda dt: self._clear_hint(), 6)
         except Exception:
             pass
 
