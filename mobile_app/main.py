@@ -6,6 +6,9 @@ Kein Backend, kein Bridge-Server, kein PC nötig.
 import struct
 import socket
 import threading
+import urllib.request
+import urllib.error
+import json as _json
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -429,6 +432,27 @@ KV = """
                 valign: 'center'
 
         Label:
+            text: 'Backend-URL  (optional – verhindert Konflikte)'
+            font_size: '13sp'
+            color: 0.545, 0.580, 0.620, 1
+            size_hint_y: None
+            height: dp(20)
+            halign: 'left'
+            text_size: self.size
+
+        TextInput:
+            id: inp_backend
+            hint_text: 'http://192.168.x.x:8000'
+            font_size: '17sp'
+            foreground_color: 0.902, 0.929, 0.953, 1
+            background_color: 0.086, 0.106, 0.133, 1
+            cursor_color: 0.024, 0.714, 0.831, 1
+            multiline: False
+            size_hint_y: None
+            height: dp(52)
+            padding: dp(14), dp(14)
+
+        Label:
             text: 'eBOX IP-Adresse'
             font_size: '13sp'
             color: 0.545, 0.580, 0.620, 1
@@ -520,11 +544,13 @@ class WallboxApp(App):
     # ── settings persistence ──
 
     def _load_cfg(self):
-        self._host = self.store.get('host')['v'] if self.store.exists('host') else '192.168.0.244'
-        self._unit = int(self.store.get('unit')['v']) if self.store.exists('unit') else 1
+        self._host    = self.store.get('host')['v']    if self.store.exists('host')    else '192.168.0.244'
+        self._unit    = int(self.store.get('unit')['v']) if self.store.exists('unit')  else 1
+        self._backend = self.store.get('backend')['v'] if self.store.exists('backend') else ''
         s = self.root.get_screen('settings')
-        s.ids.inp_host.text = self._host
-        s.ids.inp_unit.text = str(self._unit)
+        s.ids.inp_host.text    = self._host
+        s.ids.inp_unit.text    = str(self._unit)
+        s.ids.inp_backend.text = self._backend
 
     def open_settings(self):
         self.root.current = 'settings'
@@ -534,12 +560,15 @@ class WallboxApp(App):
 
     def save_settings(self):
         s = self.root.get_screen('settings')
-        host = s.ids.inp_host.text.strip() or '192.168.0.244'
-        unit = int(s.ids.inp_unit.text.strip() or '1')
-        self.store.put('host', v=host)
-        self.store.put('unit', v=unit)
-        self._host = host
-        self._unit = unit
+        host    = s.ids.inp_host.text.strip()    or '192.168.0.244'
+        unit    = int(s.ids.inp_unit.text.strip() or '1')
+        backend = s.ids.inp_backend.text.strip().rstrip('/')
+        self.store.put('host',    v=host)
+        self.store.put('unit',    v=unit)
+        self.store.put('backend', v=backend)
+        self._host    = host
+        self._unit    = unit
+        self._backend = backend
         self._reconnect()
         self.root.current = 'main'
 
@@ -643,28 +672,38 @@ class WallboxApp(App):
 
     def apply(self):
         amps = self.sel_amps
-        ids  = self.root.get_screen('main').ids
+        self.root.get_screen('main').ids.lbl_hint.text = f'Setze {amps:.1f} A…'
+        threading.Thread(target=self._apply_thread, args=(amps,), daemon=True).start()
 
-        # Warn if backend might override (check port 8000 silently)
-        def _write():
-            ok = self.modbus.write_f32_x3(1012, amps)
-            self._after_apply(ok, amps)
+    def _apply_thread(self, amps: float):
+        # If a backend URL is configured, switch it to manual first so it
+        # doesn't override our value on the next 30-second poll cycle.
+        backend_switched = False
+        if self._backend:
+            try:
+                req = urllib.request.Request(
+                    self._backend + '/api/mode',
+                    data=_json.dumps({'mode': 'manual'}).encode(),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                urllib.request.urlopen(req, timeout=2)
+                backend_switched = True
+            except Exception:
+                pass  # backend not reachable – write Modbus directly anyway
 
-        ids.lbl_hint.text = f'Setze {amps:.1f} A…'
-        threading.Thread(target=_write, daemon=True).start()
+        ok = self.modbus.write_f32_x3(1012, amps)
+        self._after_apply(ok, amps, backend_switched)
 
     @mainthread
-    def _after_apply(self, ok: bool, amps: float):
+    def _after_apply(self, ok: bool, amps: float, backend_switched: bool):
         ids = self.root.get_screen('main').ids
         if ok:
-            ids.lbl_hint.text = (
-                f'✓ {amps:.1f} A gesetzt'
-                if amps > 0
-                else '✓ Ladung gestoppt'
-            )
+            base = f'✓ {amps:.1f} A gesetzt' if amps > 0 else '✓ Ladung gestoppt'
+            ids.lbl_hint.text = base + ('  (Backend → Manuell)' if backend_switched else '')
         else:
             ids.lbl_hint.text = '✗ Fehler beim Schreiben'
-        Clock.schedule_once(lambda dt: self._clear_hint(), 3)
+        Clock.schedule_once(lambda dt: self._clear_hint(), 4)
 
     def _clear_hint(self):
         try:
