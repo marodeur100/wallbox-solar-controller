@@ -17,10 +17,10 @@ NEOOM BEAAM ──HTTP──► Controller (Python) ──Modbus TCP──► Co
                               │
                          FastAPI + SSE
                               │
-                         Browser (Web-UI)
+                   Browser / Android App
 ```
 
-Alle 30 Sekunden werden die Energiefluss-Daten vom NEOOM-System abgerufen (PV-Produktion, Verbrauch, Netz, Batterie). Im **Automatik-Modus** berechnet der Controller daraus den optimalen Ladestrom und schreibt ihn per Modbus TCP direkt auf die Wallbox. Im **Manuell-Modus** kann der Ladestrom frei über das Web-Interface gesetzt werden.
+Alle 30 Sekunden werden die Energiefluss-Daten vom NEOOM-System abgerufen (PV-Produktion, Verbrauch, Netz, Batterie). Im **Automatik-Modus** berechnet der Controller daraus den optimalen Ladestrom und schreibt ihn per Modbus TCP direkt auf die Wallbox. Im **Manuell-Modus** kann der Ladestrom frei über das Web-Interface oder die Android-App gesetzt werden.
 
 ### Regellogik (Automatik-Modus)
 
@@ -29,8 +29,8 @@ Alle 30 Sekunden werden die Energiefluss-Daten vom NEOOM-System abgerufen (PV-Pr
 - **Rampe:** Maximale Stromänderung pro Zyklus begrenzt (kein harter Sprung)
 - **Haltezeit:** Erst nach `N` Zyklen unter der Stoppschwelle wird die Ladung beendet
 - **Reserve:** Konfigurierbarer Puffer, der nicht für die Wallbox verwendet wird
-- **Feedback-Kompensation:** Der aktuell gesetzte Ladestrom wird beim Lesen des Überschusses wieder hinzuaddiert, da die Wallbox-Last bereits im gemessenen Hausverbrauch enthalten ist. Ohne diese Korrektur würde der Controller seinen eigenen Ladestrom als „fehlenden Überschuss" interpretieren und die Ladung sofort wieder stoppen.
-- **Nahtloser Moduswechsel:** Beim Umschalten von Manuell auf Automatik übernimmt der Controller den aktuell aktiven Ladestrom als Startwert, sodass eine laufende Ladung nicht unterbrochen wird.
+- **Feedback-Kompensation:** Der aktuell gesetzte Ladestrom wird beim Lesen des Überschusses wieder hinzuaddiert, da die Wallbox-Last bereits im gemessenen Hausverbrauch enthalten ist.
+- **Nahtloser Moduswechsel:** Beim Umschalten von Manuell auf Automatik übernimmt der Controller den aktuell aktiven Ladestrom als Startwert.
 
 ---
 
@@ -68,25 +68,25 @@ Die Ersteinrichtung erfolgt über die **Compleo eConfig App** (Bluetooth), nicht
 3. An der eBOX den **Bluetooth-Knopf 3–5 Sekunden** gedrückt halten, bis er blinkt
 4. In der eConfig App mit der eBOX verbinden und **PUK** eingeben (Rückseite der Betriebsanleitung)
 5. Im Konfigurationsassistenten **WLAN-SSID und Passwort** eintragen (alternativ LAN)
-6. **Statische IP-Adresse aktivieren** und eine freie Adresse im Heimnetz vergeben (z. B. `192.168.1.50`) – diese IP wird später für Modbus und WebConfig benötigt
+6. **Statische IP-Adresse aktivieren** und eine freie Adresse im Heimnetz vergeben (z. B. `192.168.1.50`)
 7. Konfiguration abschließen und speichern
 
 ### Schritt 2 – WebConfig aufrufen
 
 Nach der Einrichtung ist die eBOX ganz normal im Heimnetz erreichbar:
 
-1. Browser öffnen: `http://<statische-ip-der-ebox>` (die in Schritt 1 vergebene Adresse)
-2. Benutzername: **admin**, Passwort: **PUK** (Rückseite der Betriebsanleitung)
+1. Browser öffnen: `http://<statische-ip-der-ebox>`
+2. Benutzername: **admin**, Passwort: **PUK**
 
 ### Schritt 3 – Modbus TCP aktivieren
 
-Im WebConfig-Menü die Modbus-TCP/IP-Kommunikation aktivieren. Die eBOX übernimmt dabei die Rolle des **Slave/Node** – der Controller (dieser Python-Dienst) ist der Master.
+Im WebConfig-Menü die Modbus-TCP/IP-Kommunikation aktivieren. Die eBOX übernimmt dabei die Rolle des **Slave/Node**.
 
 ### Schritt 4 – Lastmanagement konfigurieren
 
 1. Tab **[LDP1 Load Management]** öffnen
 2. Feld **„Control Computer"** auf **aktiv** setzen
-3. **Fallback-Strom** einstellen (empfohlen: 6–10 A) – wird verwendet, wenn der Controller nicht erreichbar ist
+3. **Fallback-Strom** einstellen (empfohlen: 6–10 A)
 4. Einstellungen speichern und eBOX neu starten
 
 #### Offizielle Compleo-Dokumentation
@@ -97,12 +97,10 @@ Im WebConfig-Menü die Modbus-TCP/IP-Kommunikation aktivieren. Die eBOX übernim
 | [Quick Guide – Modbus Energiemanagement](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/DE_Quickguide_eBOX_-_Modbus_Energiemanagement_20230814.pdf) | DE |
 | [Quick Guide – Modbus Energy Management](https://www.compleo-charging.com/fileadmin/Documentcenter/Modbus_eBOX/EN_Quickguide_eBOX_-_Modbus_energy_management_20230814.pdf) | EN |
 | [WebConfig Bedienungsanleitung](https://www.compleo-charging.com/fileadmin/Documentcenter/WebConfig/DE_WebConfig_OpMan.pdf) | DE |
-| [WebConfig Operations Manual](https://www.compleo-charging.com/fileadmin/Documentcenter/WebConfig/WebConfig_OpMan_EN_2002308.pdf) | EN |
-| [Quick Guide – Onboard Load Management](https://www.compleo-charging.com/fileadmin/Documentcenter/Loadmanagement/EN_Quickguide_eBOX_onboard_load_management_20231121.pdf) | EN |
 
 ---
 
-## Installation & Konfiguration
+## Installation & Konfiguration (Backend)
 
 ### 1. Repository klonen
 
@@ -132,17 +130,17 @@ ebox:
   fallback_amps: 6.0              # Sicherheits-Fallback bei Controller-Ausfall
 
 controller:
-  reserve_w: 300                  # Leistungsreserve, die nicht für die Wallbox genutzt wird
-  smoothing_alpha: 0.35           # Glättungsfaktor (0 = träge, 1 = sofort)
-  start_margin_w: 500             # Puffer über Mindeststrom zum Starten
-  stop_margin_w: 700              # Puffer unter Mindeststrom zum Stoppen
-  stop_hold_cycles: 6             # Zyklen unter Stoppschwelle vor dem Stoppen
-  max_step_a: 1.0                 # Maximale Stromänderung pro Zyklus (A)
+  reserve_w: 300
+  smoothing_alpha: 0.35
+  start_margin_w: 500
+  stop_margin_w: 700
+  stop_hold_cycles: 6
+  max_step_a: 1.0
 
 server:
-  host: "0.0.0.0"                 # Alle Netzwerkschnittstellen
+  host: "0.0.0.0"
   port: 8000
-  poll_interval_s: 30             # Abfrageintervall in Sekunden
+  poll_interval_s: 30
 ```
 
 > `config.yaml` ist in `.gitignore` – Credentials landen nie im Repository.
@@ -151,9 +149,35 @@ server:
 
 ```bash
 python main.py
+# oder unter Windows:
+start.cmd
 ```
 
-Web-Interface aufrufen: `http://<ip-des-mini-pc>:8000`
+Web-Interface: `http://<ip-des-mini-pc>:8000`
+
+---
+
+## Android App
+
+Die native Android-App ermöglicht die **direkte Modbus-TCP-Steuerung** ohne Browser. Sie kommuniziert direkt mit der eBOX im lokalen Netz – kein Backend nötig.
+
+> **Hinweis:** Wenn der Backend-Controller gleichzeitig im Automatik-Modus läuft, überschreibt er den per App gesetzten Wert beim nächsten Poll-Zyklus. App und Backend nicht gleichzeitig für Schreiboperationen nutzen.
+
+### APK herunterladen & installieren
+
+1. Auf [GitHub Actions → Build Android APK](https://github.com/marodeur100/wallbox-solar-controller/actions/workflows/build-apk.yml) den letzten erfolgreichen Build öffnen
+2. Unter **Artifacts** → `wallbox-apk` herunterladen und ZIP entpacken
+3. `wallbox-debug.apk` auf das Android-Gerät übertragen
+4. Auf dem Gerät: **Einstellungen → Apps → Unbekannte Quellen** erlauben, dann APK installieren
+
+### Einstellungen in der App
+
+| Feld | Beschreibung |
+|---|---|
+| eBOX IP-Adresse | IP der Wallbox im lokalen Netz (z. B. `192.168.0.244`) |
+| Modbus Port | Standard: `502` |
+| Modbus Unit ID | Standard: `1` |
+| Backend-URL | Optional: URL des laufenden Backends (z. B. `http://192.168.0.10:8000`) – wird vor dem Schreiben automatisch auf Manuell geschaltet |
 
 ---
 
@@ -167,8 +191,13 @@ wallbox-solar-controller/
 ├── ebox_client.py        # Compleo eBOX Modbus TCP-Client
 ├── config.example.yaml   # Konfigurationsvorlage
 ├── requirements.txt
+├── start.cmd             # Windows-Startskript
+├── mobile_app/
+│   ├── main.py           # Android App (Kivy, direkte Modbus-Verbindung)
+│   └── buildozer.spec    # Build-Konfiguration für GitHub Actions
 └── static/
-    └── index.html        # Web-Dashboard (kein externes Framework)
+    ├── index.html        # Web-Dashboard
+    └── app.html          # Mobile PWA (Alternative zur nativen App)
 ```
 
 ---
@@ -180,12 +209,11 @@ wallbox-solar-controller/
 | 1006 / 1008 / 1010 | FLOAT32 | Ist-Strom L1 / L2 / L3 (A) | **Input Register (FC4)** – nur lesen |
 | 1012 / 1014 / 1016 | FLOAT32 | MaxCurrentPhase L1 / L2 / L3 – aktives Limit (A) | Holding Register (FC3) – lesen/schreiben |
 | 1018 / 1020 / 1022 | FLOAT32 | FallbackMaxCurrent L1 / L2 / L3 (A) | Holding Register (FC3) – lesen/schreiben |
-| 1025 / 1026 / 1027 | UINT16 | Phasenmapping L1 / L2 / L3 | Holding Register (FC3) – nur lesen |
 | 1028 | UINT16 | Verfügbarkeit (1 = Bereit) | Holding Register (FC3) – nur lesen |
 
-FLOAT32-Werte belegen je zwei aufeinanderfolgende Register (Big-Endian). Der Controller schreibt alle drei Phasen-Register immer gemeinsam in einer einzigen Modbus-Transaktion.
+FLOAT32-Werte belegen je zwei aufeinanderfolgende Register (Big-Endian). Schreiboperationen setzen alle drei Phasen-Register in einer einzigen Modbus-Transaktion.
 
-> **Wichtig:** Die Ist-Strom-Register (1006/1008/1010) sind bei der eBOX **Input Registers (Modbus FC4)**, nicht Holding Registers (FC3). Ein Leseversuch mit FC3 liefert `exception_code=2` (Illegal Data Address). Der eBOX-Client liest diese Register daher mit `read_input_registers()`.
+> **Wichtig:** Die Ist-Strom-Register (1006/1008/1010) sind **Input Registers (FC4)**, nicht Holding Registers (FC3). Ein Leseversuch mit FC3 liefert `exception_code=2`.
 
 ---
 
@@ -196,8 +224,9 @@ FLOAT32-Werte belegen je zwei aufeinanderfolgende Register (Big-Endian). Der Con
 | `GET` | `/` | Web-Dashboard |
 | `GET` | `/api/state` | Aktueller Zustand als JSON |
 | `GET` | `/api/stream` | Server-Sent Events (Live-Updates) |
-| `POST` | `/api/mode` | Modus setzen: `{"mode": "auto"}`  oder `{"mode": "manual"}` |
+| `POST` | `/api/mode` | Modus setzen: `{"mode": "auto"}` oder `{"mode": "manual"}` |
 | `POST` | `/api/manual` | Ladestrom setzen: `{"amps": 10.5}` (0–16 A) |
+| `POST` | `/api/shutdown` | Controller beenden |
 
 ---
 
@@ -229,7 +258,7 @@ sudo systemctl enable --now wallbox-controller
 
 - Die eBOX Smart wird seit März 2023 nicht mehr produziert; die eBOX Professional ist der Nachfolger und verwendet das gleiche Modbus-Interface.
 - Der NEOOM API-Key ist in der NEOOM-App unter **Einstellungen → Integrationen → API** zu finden.
-- Minimaler Ladestrom der eBOX ist 6 A (dreiphasig = 4 140 W). Unter diesem Wert stoppt der Controller die Ladung statt auf 0 zu regeln.
+- Minimaler Ladestrom der eBOX ist 6 A (dreiphasig = 4 140 W).
 
 ---
 

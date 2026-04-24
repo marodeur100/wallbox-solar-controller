@@ -213,8 +213,6 @@ KV = """
                 text: 'Verbinde...'
                 font_size: '12sp'
                 color: 0.545, 0.580, 0.620, 1
-                size_hint_x: None
-                width: dp(110)
                 halign: 'right'
                 text_size: self.size
                 valign: 'center'
@@ -223,11 +221,21 @@ KV = """
                 font_size: '18sp'
                 bold: True
                 size_hint_x: None
-                width: dp(44)
+                width: dp(40)
                 background_normal: ''
                 background_color: 0, 0, 0, 0
                 color: 0.545, 0.580, 0.620, 1
                 on_press: app.open_settings()
+            Button:
+                text: 'X'
+                font_size: '16sp'
+                bold: True
+                size_hint_x: None
+                width: dp(40)
+                background_normal: ''
+                background_color: 0.25, 0.05, 0.05, 1
+                color: 1, 0.4, 0.4, 1
+                on_press: app.exit_app()
 
         # -- Content --
         ScrollView:
@@ -522,6 +530,28 @@ KV = """
             padding: dp(14), dp(14)
 
         Label:
+            text: 'Modbus Port (Standard: 502)'
+            font_size: '13sp'
+            color: 0.545, 0.580, 0.620, 1
+            size_hint_y: None
+            height: dp(20)
+            halign: 'left'
+            text_size: self.size
+
+        TextInput:
+            id: inp_port
+            hint_text: '502'
+            font_size: '17sp'
+            foreground_color: 0.902, 0.929, 0.953, 1
+            background_color: 0.086, 0.106, 0.133, 1
+            cursor_color: 0.024, 0.714, 0.831, 1
+            multiline: False
+            input_filter: 'int'
+            size_hint_y: None
+            height: dp(52)
+            padding: dp(14), dp(14)
+
+        Label:
             text: 'Modbus Unit ID  (meist 1)'
             font_size: '13sp'
             color: 0.545, 0.580, 0.620, 1
@@ -629,11 +659,13 @@ class WallboxApp(App):
     # ── settings persistence ──
 
     def _load_cfg(self):
-        self._host    = self.store.get('host')['v']      if self.store.exists('host')    else '192.168.0.244'
-        self._unit    = int(self.store.get('unit')['v']) if self.store.exists('unit')    else 1
-        self._backend = self.store.get('backend')['v']   if self.store.exists('backend') else ''
+        self._host         = self.store.get('host')['v']      if self.store.exists('host')    else '192.168.0.244'
+        self._modbus_port  = int(self.store.get('port')['v']) if self.store.exists('port')    else 502
+        self._unit         = int(self.store.get('unit')['v']) if self.store.exists('unit')    else 1
+        self._backend      = self.store.get('backend')['v']   if self.store.exists('backend') else ''
         s = self.root.get_screen('settings')
         s.ids.inp_host.text    = self._host
+        s.ids.inp_port.text    = str(self._modbus_port)
         s.ids.inp_unit.text    = str(self._unit)
         s.ids.inp_backend.text = self._backend
 
@@ -646,16 +678,22 @@ class WallboxApp(App):
     def save_settings(self):
         s = self.root.get_screen('settings')
         host    = s.ids.inp_host.text.strip()    or '192.168.0.244'
+        port    = int(s.ids.inp_port.text.strip() or '502')
         unit    = int(s.ids.inp_unit.text.strip() or '1')
         backend = s.ids.inp_backend.text.strip().rstrip('/')
         self.store.put('host',    v=host)
+        self.store.put('port',    v=port)
         self.store.put('unit',    v=unit)
         self.store.put('backend', v=backend)
-        self._host    = host
-        self._unit    = unit
-        self._backend = backend
+        self._host        = host
+        self._modbus_port = port
+        self._unit        = unit
+        self._backend     = backend
         self._reconnect()
         self.root.current = 'main'
+
+    def exit_app(self):
+        App.get_running_app().stop()
 
     # ── connection ──
 
