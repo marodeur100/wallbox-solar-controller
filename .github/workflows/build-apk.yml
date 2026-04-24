@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -24,7 +30,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             git zip unzip python3-pip \
-            openjdk-17-jdk autoconf libtool \
+            autoconf libtool \
             libltdl-dev libffi-dev libssl-dev \
             build-essential ccache
 
