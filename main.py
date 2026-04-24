@@ -128,8 +128,14 @@ def _poll_sync() -> None:
 
     if app_state["mode"] == "auto" and neoom_metrics is not None:
         raw = neoom_metrics.get("pv_priority_surplus_w")
+        prev_ebox = app_state.get("ebox") or {}
+        l1 = prev_ebox.get("current_l1")
+        l2 = prev_ebox.get("current_l2")
+        l3 = prev_ebox.get("current_l3")
+        actual_amps = (l1 + l2 + l3) / 3 if None not in (l1, l2, l3) else None
         dec = decide(
             ctrl_state, raw,
+            actual_amps=actual_amps,
             reserve_w=float(CTRL["reserve_w"]),
             smoothing_alpha=float(CTRL["smoothing_alpha"]),
             start_margin_w=float(CTRL["start_margin_w"]),

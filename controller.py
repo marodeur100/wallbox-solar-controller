@@ -31,6 +31,7 @@ def decide(
     state: ControllerState,
     raw_surplus: Optional[float],
     *,
+    actual_amps: Optional[float] = None,
     reserve_w: float,
     smoothing_alpha: float,
     start_margin_w: float,
@@ -39,10 +40,12 @@ def decide(
     max_step_a: float,
 ) -> Decision:
     # The wallbox load is included in the consumption that reduces raw_surplus.
-    # Add it back so the controller sees the true PV surplus, not the
-    # feedback-reduced one (otherwise charging would immediately suppress itself).
+    # Add it back so the controller sees the true PV surplus. Use the actual
+    # measured current (not the commanded setpoint) so a car reducing its own
+    # charge rate (e.g. nearly full battery) doesn't cause over-compensation.
     if state.charging_enabled and raw_surplus is not None:
-        raw_surplus = raw_surplus + state.last_setpoint_a * PHASES * VOLTAGE
+        compensation_a = actual_amps if actual_amps is not None else state.last_setpoint_a
+        raw_surplus = raw_surplus + compensation_a * PHASES * VOLTAGE
 
     state.smoothed_surplus_w = _smooth(state.smoothed_surplus_w, raw_surplus, smoothing_alpha)
     s = state.smoothed_surplus_w
