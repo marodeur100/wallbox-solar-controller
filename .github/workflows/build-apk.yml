@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'mobile_app/**'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch:   # auch manuell auslösbar
 
 jobs:

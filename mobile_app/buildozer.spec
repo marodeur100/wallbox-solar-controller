@@ -4,7 +4,7 @@ package.name = wallbox
 package.domain = de.marodeur100
 source.dir = .
 source.include_exts = py
-version = 1.0
+version = 1.1
 requirements = python3,kivy==2.3.0
 android.permissions = android.permission.INTERNET
 android.api = 34
