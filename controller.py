@@ -38,6 +38,12 @@ def decide(
     stop_hold_cycles: int,
     max_step_a: float,
 ) -> Decision:
+    # The wallbox load is included in the consumption that reduces raw_surplus.
+    # Add it back so the controller sees the true PV surplus, not the
+    # feedback-reduced one (otherwise charging would immediately suppress itself).
+    if state.charging_enabled and raw_surplus is not None:
+        raw_surplus = raw_surplus + state.last_setpoint_a * PHASES * VOLTAGE
+
     state.smoothed_surplus_w = _smooth(state.smoothed_surplus_w, raw_surplus, smoothing_alpha)
     s = state.smoothed_surplus_w
 

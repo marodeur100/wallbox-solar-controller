@@ -31,8 +31,8 @@ class EBoxModbusClient:
         except Exception:
             pass
 
-    def _dispatch_read(self, address: int, count: int):
-        method = self.client.read_holding_registers
+    def _dispatch_read(self, address: int, count: int, input_register: bool = False):
+        method = self.client.read_input_registers if input_register else self.client.read_holding_registers
         try:
             params = inspect.signature(method).parameters
         except Exception:
@@ -110,9 +110,9 @@ class EBoxModbusClient:
             raise RuntimeError(f"Keine Daten bei Register {address}")
         return int(regs[0])
 
-    def read_float32(self, address: int) -> float:
+    def read_float32(self, address: int, input_register: bool = False) -> float:
         with self._lock:
-            response = self._dispatch_read(address, 2)
+            response = self._dispatch_read(address, 2, input_register=input_register)
         if hasattr(response, "isError") and response.isError():
             raise RuntimeError(f"Modbus-Fehler bei Register {address}: {response}")
         regs = getattr(response, "registers", None)
@@ -152,7 +152,20 @@ class EBoxModbusClient:
             ("current_l3",  1010, "f32"),
         ]:
             try:
-                data[name] = self.read_float32(address) if dtype == "f32" else self.read_u16(address)
+                if dtype == "f32":
+                    data[name] = self.read_float32(address)
+                else:
+                    data[name] = self.read_u16(address)
             except Exception:
                 data[name] = None
+
+        # Measured currents are often in input registers (FC4) rather than
+        # holding registers (FC3). Retry with FC4 if FC3 returned null.
+        for name, address in [("current_l1", 1006), ("current_l2", 1008), ("current_l3", 1010)]:
+            if data[name] is None:
+                try:
+                    data[name] = self.read_float32(address, input_register=True)
+                except Exception:
+                    pass
+
         return data

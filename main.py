@@ -248,6 +248,13 @@ async def set_mode(req: ModeRequest):
     if req.mode == "auto":
         global ctrl_state
         ctrl_state = ControllerState()
+        # Inherit current wallbox setpoint so the feedback compensation kicks in
+        # immediately and the controller doesn't falsely see zero surplus.
+        ebox = app_state.get("ebox") or {}
+        limit = ebox.get("limit_l1")
+        if limit is not None and limit > 0.5:
+            ctrl_state.charging_enabled = True
+            ctrl_state.last_setpoint_a = float(limit)
     app_state["mode"] = req.mode
     return {"mode": req.mode}
 
