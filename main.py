@@ -211,6 +211,26 @@ async def root():
     return HTMLResponse((Path("static") / "index.html").read_text(encoding="utf-8"))
 
 
+@app.get("/app", response_class=HTMLResponse, include_in_schema=False)
+async def mobile_app():
+    return HTMLResponse((Path("static") / "app.html").read_text(encoding="utf-8"))
+
+
+@app.get("/manifest.json", include_in_schema=False)
+async def manifest():
+    return FileResponse(Path("static") / "manifest.json", media_type="application/manifest+json")
+
+
+@app.get("/icon-192.png", include_in_schema=False)
+async def icon_192():
+    return FileResponse(Path("static") / "icon-192.png", media_type="image/png")
+
+
+@app.get("/icon-512.png", include_in_schema=False)
+async def icon_512():
+    return FileResponse(Path("static") / "icon-512.png", media_type="image/png")
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon_ico():
     return FileResponse(Path("static") / "favicon.ico", media_type="image/x-icon")
