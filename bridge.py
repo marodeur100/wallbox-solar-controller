@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-Minimaler HTTP → Modbus-Bridge für die Wallbox-App.
+Wallbox Bridge – eigenständiger HTTP-Server (kein Backend nötig).
 
 Starten:  python bridge.py
 Optionen: python bridge.py --ebox-host 192.168.0.244 --port 8001
 
-Endpunkte:
-  GET  /status          → Wallbox-Zustand (JSON)
-  POST /set  {"amps": 10.5}  → Ladestrom setzen
-  GET  /health          → {"ok": true}
+Dient gleichzeitig als:
+  • Modbus-Bridge  GET /status  POST /set {"amps": 10.5}
+  • App-Server     GET /app  (und alle statischen Dateien)
 
-Liest Host/Port aus config.yaml wenn vorhanden, sonst aus Argumenten.
+Auf dem Handy einfach http://<laptop-ip>:8001/app aufrufen und
+"Zum Startbildschirm hinzufügen" – fertig, kein Mini-PC nötig.
+
+Liest eBOX-Verbindungsdaten aus config.yaml wenn vorhanden.
 """
 import argparse
 import json
-import sys
+import mimetypes
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -25,26 +28,36 @@ except ImportError:
 
 from ebox_client import EBoxModbusClient
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# ── Config ─────────────────────────────────────────────────────────────────────
 
 def load_config():
     if yaml and Path("config.yaml").exists():
         with open("config.yaml", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-        return cfg["ebox"]["host"], int(cfg["ebox"]["port"]), int(cfg["ebox"]["unit_id"])
+        e = cfg["ebox"]
+        return e["host"], int(e["port"]), int(e["unit_id"])
     return "192.168.0.244", 502, 1
 
 
-def parse_args(host, port):
-    p = argparse.ArgumentParser(description="Wallbox HTTP-Modbus-Bridge")
-    p.add_argument("--ebox-host", default=host)
+def parse_args(default_host):
+    p = argparse.ArgumentParser(description="Wallbox HTTP-Bridge + App-Server")
+    p.add_argument("--ebox-host", default=default_host)
     p.add_argument("--ebox-port", type=int, default=502)
     p.add_argument("--ebox-unit", type=int, default=1)
-    p.add_argument("--port",      type=int, default=8001, help="HTTP-Port (default: 8001)")
+    p.add_argument("--port", type=int, default=8001, help="HTTP-Port (default: 8001)")
     return p.parse_args()
 
 
-# ── Modbus client (lazy connect) ──────────────────────────────────────────────
+def local_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "localhost"
+
+
+# ── Modbus client ──────────────────────────────────────────────────────────────
 
 _client: EBoxModbusClient | None = None
 
@@ -67,17 +80,30 @@ def reset_client():
         _client = None
 
 
-# ── HTTP handler ──────────────────────────────────────────────────────────────
+# ── Static files ───────────────────────────────────────────────────────────────
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+# Map URL path → static file (only files the app needs)
+STATIC_ROUTES = {
+    "/app":           ("app.html",      "text/html; charset=utf-8"),
+    "/manifest.json": ("manifest.json", "application/manifest+json"),
+    "/favicon.ico":   ("favicon.ico",   "image/x-icon"),
+    "/favicon.svg":   ("favicon.svg",   "image/svg+xml"),
+    "/favicon.png":   ("favicon.png",   "image/png"),
+    "/icon-192.png":  ("icon-192.png",  "image/png"),
+    "/icon-512.png":  ("icon-512.png",  "image/png"),
+}
+
+
+# ── HTTP handler ───────────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
     ebox_host: str = "192.168.0.244"
     ebox_port: int = 502
     ebox_unit: int = 1
 
-    def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+    # ── routing ──
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -85,7 +111,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == "/status":
+        # redirect bare / to /app
+        if self.path == "/":
+            self.send_response(302)
+            self.send_header("Location", "/app")
+            self.end_headers()
+            return
+
+        if self.path in STATIC_ROUTES:
+            fname, mime = STATIC_ROUTES[self.path]
+            self._serve_file(STATIC_DIR / fname, mime)
+        elif self.path == "/status":
             self._handle_status()
         elif self.path == "/health":
             self._json(200, {"ok": True})
@@ -100,17 +136,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    # ── Modbus handlers ──
+
     def _handle_status(self):
         try:
-            status = get_client(self.ebox_host, self.ebox_port, self.ebox_unit).read_status()
-            self._json(200, status)
-        except Exception as e:
+            data = get_client(self.ebox_host, self.ebox_port, self.ebox_unit).read_status()
+            self._json(200, data)
+        except Exception:
             reset_client()
             try:
-                status = get_client(self.ebox_host, self.ebox_port, self.ebox_unit).read_status()
-                self._json(200, status)
-            except Exception as e2:
-                self._json(500, {"error": str(e2)})
+                data = get_client(self.ebox_host, self.ebox_port, self.ebox_unit).read_status()
+                self._json(200, data)
+            except Exception as e:
+                self._json(500, {"error": str(e)})
 
     def _handle_set(self):
         try:
@@ -122,9 +160,29 @@ class Handler(BaseHTTPRequestHandler):
                 return
             get_client(self.ebox_host, self.ebox_port, self.ebox_unit).write_three_phase_limit(amps)
             self._json(200, {"amps": amps})
-        except Exception as e:
+        except Exception:
             reset_client()
-            self._json(500, {"error": str(e)})
+            self._json(500, {"error": "Modbus-Fehler beim Schreiben"})
+
+    # ── helpers ──
+
+    def _serve_file(self, path: Path, mime: str):
+        if not path.exists():
+            self.send_response(404)
+            self.end_headers()
+            return
+        data = path.read_bytes()
+        self.send_response(200)
+        self._cors()
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", len(data))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _json(self, code, data):
         body = json.dumps(data).encode()
@@ -136,22 +194,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, fmt, *args):
-        print(f"  {self.address_string()} {fmt % args}")
+        print(f"  {self.address_string()}  {fmt % args}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    cfg_host, cfg_port, cfg_unit = load_config()
-    args = parse_args(cfg_host, cfg_port)
+    cfg_host, _, cfg_unit = load_config()
+    args = parse_args(cfg_host)
 
     Handler.ebox_host = args.ebox_host
     Handler.ebox_port = args.ebox_port
     Handler.ebox_unit = args.ebox_unit
 
-    print(f"Wallbox Bridge gestartet")
-    print(f"  eBOX:    {args.ebox_host}:{args.ebox_port} (Unit {args.ebox_unit})")
-    print(f"  App-URL: http://<diese-ip>:{args.port}/set")
+    ip = local_ip()
+    print("Wallbox Bridge gestartet")
+    print(f"  eBOX :  {args.ebox_host}:{args.ebox_port}  (Unit {args.ebox_unit})")
+    print(f"  App  :  http://{ip}:{args.port}/app   ← auf dem Handy aufrufen")
     print(f"  Stoppen: Strg+C\n")
 
     try:
