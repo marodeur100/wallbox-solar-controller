@@ -6,6 +6,7 @@ source.dir = .
 source.include_exts = py
 version = 1.1
 requirements = python3,kivy==2.3.0
+orientation = portrait
 android.permissions = android.permission.INTERNET
 android.api = 34
 android.minapi = 26

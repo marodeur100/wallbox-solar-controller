@@ -3,9 +3,11 @@ Wallbox Controller – Android App (Kivy)
 Spricht direkt per Modbus TCP mit der Compleo eBOX.
 Kein Backend, kein Bridge-Server, kein PC nötig.
 """
+import os
 import struct
 import socket
 import threading
+import traceback
 import urllib.request
 import urllib.error
 import json as _json
@@ -15,6 +17,9 @@ from kivy.lang import Builder
 from kivy.clock import Clock, mainthread
 from kivy.storage.jsonstore import JsonStore
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.popup import Popup
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 
 # ── Modbus TCP (pure Python, keine Abhängigkeiten) ────────────────────────────
 
@@ -73,7 +78,7 @@ class Modbus:
         """Schreibt denselben Float-Wert auf 3 aufeinanderfolgende Phasen-Register."""
         with self._lock:
             raw  = struct.pack(">f", float(value))
-            data = raw * 3          # 3 Phasen × 4 Bytes = 12 Bytes = 6 Register
+            data = raw * 3          # 3 Phasen x 4 Bytes = 12 Bytes = 6 Register
             pdu  = struct.pack(">BHHB", 0x10, addr, 6, 12) + data
             resp = self._req(pdu)
             return resp is not None and resp[0] == 0x10
@@ -141,7 +146,7 @@ KV = """
     BoxLayout:
         orientation: 'vertical'
 
-        # ── Header ──
+        # -- Header --
         BoxLayout:
             size_hint_y: None
             height: dp(56)
@@ -154,7 +159,7 @@ KV = """
                     pos: self.pos
                     size: self.size
             Label:
-                text: '⚡  Wallbox'
+                text: 'Wallbox'
                 font_size: '18sp'
                 bold: True
                 color: 0.902, 0.929, 0.953, 1
@@ -163,17 +168,18 @@ KV = """
                 valign: 'center'
             Label:
                 id: conn_label
-                text: 'Verbinde…'
+                text: 'Verbinde...'
                 font_size: '12sp'
                 color: 0.545, 0.580, 0.620, 1
                 size_hint_x: None
-                width: dp(100)
+                width: dp(110)
                 halign: 'right'
                 text_size: self.size
                 valign: 'center'
             Button:
-                text: '⚙'
-                font_size: '22sp'
+                text: 'S'
+                font_size: '18sp'
+                bold: True
                 size_hint_x: None
                 width: dp(44)
                 background_normal: ''
@@ -181,7 +187,7 @@ KV = """
                 color: 0.545, 0.580, 0.620, 1
                 on_press: app.open_settings()
 
-        # ── Content ──
+        # -- Content --
         ScrollView:
             BoxLayout:
                 orientation: 'vertical'
@@ -217,7 +223,7 @@ KV = """
                         height: dp(42)
                         Label:
                             id: lbl_current
-                            text: '—  A'
+                            text: '--  A'
                             font_size: '30sp'
                             bold: True
                             color: 0.024, 0.714, 0.831, 1
@@ -226,7 +232,7 @@ KV = """
                             valign: 'center'
                         Label:
                             id: lbl_power
-                            text: '—  kW'
+                            text: '--  kW'
                             font_size: '30sp'
                             bold: True
                             color: 0.941, 0.753, 0.125, 1
@@ -235,7 +241,7 @@ KV = """
                             valign: 'center'
                     Label:
                         id: lbl_limit
-                        text: 'Limit: —'
+                        text: 'Limit: --'
                         font_size: '12sp'
                         color: 0.545, 0.580, 0.620, 1
                         halign: 'left'
@@ -272,7 +278,7 @@ KV = """
                         row_default_height: dp(52)
                         Button:
                             id: btn_0
-                            text: 'Stopp\n0 A'
+                            text: 'Stopp  0 A'
                             font_size: '14sp'
                             bold: True
                             background_normal: ''
@@ -373,7 +379,7 @@ KV = """
 
                 # Anwenden-Button
                 Button:
-                    text: '⚡   Anwenden'
+                    text: 'Anwenden'
                     font_size: '17sp'
                     bold: True
                     size_hint_y: None
@@ -414,7 +420,7 @@ KV = """
             height: dp(48)
             spacing: dp(8)
             Button:
-                text: '←'
+                text: '<'
                 font_size: '22sp'
                 size_hint_x: None
                 width: dp(44)
@@ -432,7 +438,7 @@ KV = """
                 valign: 'center'
 
         Label:
-            text: 'Backend-URL  (optional – verhindert Konflikte)'
+            text: 'Backend-URL  (optional)'
             font_size: '13sp'
             color: 0.545, 0.580, 0.620, 1
             size_hint_y: None
@@ -496,7 +502,7 @@ KV = """
             padding: dp(14), dp(14)
 
         Button:
-            text: 'Speichern & Verbinden'
+            text: 'Speichern und Verbinden'
             font_size: '16sp'
             bold: True
             size_hint_y: None
@@ -527,26 +533,62 @@ PRESET_IDS = {0: 'btn_0', 6: 'btn_6', 8: 'btn_8', 10: 'btn_10', 13: 'btn_13', 16
 class WallboxApp(App):
 
     def build(self):
-        self.store   = JsonStore('wallbox_cfg.json')
-        self.modbus  = Modbus()
-        self.sel_amps = 6.0
-        self._poll   = None
-        sm = ScreenManager()
         Builder.load_string(KV)
+        # user_data_dir is writable on Android (/data/data/<pkg>/files)
+        store_path = os.path.join(self.user_data_dir, 'wallbox_cfg.json')
+        self.store    = JsonStore(store_path)
+        self.modbus   = Modbus()
+        self.sel_amps = 6.0
+        self._poll    = None
+        self._host    = '192.168.0.244'
+        self._unit    = 1
+        self._backend = ''
+        sm = ScreenManager()
         sm.add_widget(MainScreen())
         sm.add_widget(SettingsScreen())
         return sm
 
     def on_start(self):
-        self._load_cfg()
+        # Defer one frame so the widget tree is fully ready
+        Clock.schedule_once(self._init, 0)
+
+    def _init(self, dt):
+        try:
+            self._load_cfg()
+        except Exception:
+            self._set_chip('CFG-Fehler', (1, 0.5, 0, 1))
+            self._show_error('Konfigurationsfehler', traceback.format_exc())
+            return
         self._connect_bg()
+
+    # ── error dialog ──
+
+    def _show_error(self, title, msg):
+        content = ScrollView()
+        lbl = Label(
+            text=msg,
+            font_size='11sp',
+            color=(1, 0.8, 0.8, 1),
+            size_hint_y=None,
+            halign='left',
+            valign='top',
+        )
+        lbl.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
+        lbl.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
+        content.add_widget(lbl)
+        popup = Popup(
+            title=title,
+            content=content,
+            size_hint=(0.95, 0.8),
+        )
+        popup.open()
 
     # ── settings persistence ──
 
     def _load_cfg(self):
-        self._host    = self.store.get('host')['v']    if self.store.exists('host')    else '192.168.0.244'
-        self._unit    = int(self.store.get('unit')['v']) if self.store.exists('unit')  else 1
-        self._backend = self.store.get('backend')['v'] if self.store.exists('backend') else ''
+        self._host    = self.store.get('host')['v']      if self.store.exists('host')    else '192.168.0.244'
+        self._unit    = int(self.store.get('unit')['v']) if self.store.exists('unit')    else 1
+        self._backend = self.store.get('backend')['v']   if self.store.exists('backend') else ''
         s = self.root.get_screen('settings')
         s.ids.inp_host.text    = self._host
         s.ids.inp_unit.text    = str(self._unit)
@@ -582,21 +624,24 @@ class WallboxApp(App):
         self._connect_bg()
 
     def _connect_bg(self):
-        self._set_chip('Verbinde…', (0.545, 0.580, 0.620, 1))
+        self._set_chip('Verbinde...', (0.545, 0.580, 0.620, 1))
         threading.Thread(target=self._connect_thread, daemon=True).start()
 
     def _connect_thread(self):
-        ok = self.modbus.connect(self._host, unit=self._unit)
+        try:
+            ok = self.modbus.connect(self._host, unit=self._unit)
+        except Exception:
+            ok = False
         self._on_connect(ok)
 
     @mainthread
     def _on_connect(self, ok):
         if ok:
-            self._set_chip('● Verbunden', (0.302, 0.796, 0.384, 1))
+            self._set_chip('Verbunden', (0.302, 0.796, 0.384, 1))
             self._poll_once(0)
             self._poll = Clock.schedule_interval(self._poll_once, 4)
         else:
-            self._set_chip('✗ Offline', (0.973, 0.318, 0.200, 1))
+            self._set_chip('Offline', (0.973, 0.318, 0.200, 1))
             Clock.schedule_once(lambda dt: self._connect_bg(), 6)
 
     # ── polling ──
@@ -605,18 +650,24 @@ class WallboxApp(App):
         threading.Thread(target=self._poll_thread, daemon=True).start()
 
     def _poll_thread(self):
-        s = self.modbus.status()
+        try:
+            s = self.modbus.status()
+        except Exception:
+            s = {}
         self._update_ui(s)
 
     @mainthread
     def _update_ui(self, s):
-        ids = self.root.get_screen('main').ids
+        try:
+            ids = self.root.get_screen('main').ids
+        except Exception:
+            return
         l1, l2, l3 = s.get('current_l1'), s.get('current_l2'), s.get('current_l3')
         limit = s.get('limit')
 
         # Connection lost?
         if l1 is None and l2 is None and l3 is None and limit is None:
-            self._set_chip('✗ Verbindung verloren', (0.973, 0.318, 0.200, 1))
+            self._set_chip('Verbindung verloren', (0.973, 0.318, 0.200, 1))
             if self._poll:
                 self._poll.cancel()
                 self._poll = None
@@ -630,13 +681,16 @@ class WallboxApp(App):
 
         ids.lbl_current.text = f'{avg:.1f} A'
         ids.lbl_power.text   = f'{kw:.2f} kW'
-        ids.lbl_limit.text   = f'Limit: {limit:.1f} A' if limit is not None else 'Limit: —'
+        ids.lbl_limit.text   = f'Limit: {limit:.1f} A' if limit is not None else 'Limit: --'
 
-        self._set_chip('● Verbunden', (0.302, 0.796, 0.384, 1))
+        self._set_chip('Verbunden', (0.302, 0.796, 0.384, 1))
         self._highlight(limit)
 
     def _highlight(self, limit):
-        ids = self.root.get_screen('main').ids
+        try:
+            ids = self.root.get_screen('main').ids
+        except Exception:
+            return
         for a, bid in PRESET_IDS.items():
             btn = ids.get(bid)
             if btn is None:
@@ -649,8 +703,9 @@ class WallboxApp(App):
 
     def _set_chip(self, text, color):
         try:
-            self.root.get_screen('main').ids.conn_label.text  = text
-            self.root.get_screen('main').ids.conn_label.color = color
+            lbl = self.root.get_screen('main').ids.conn_label
+            lbl.text  = text
+            lbl.color = color
         except Exception:
             pass
 
@@ -658,10 +713,13 @@ class WallboxApp(App):
 
     def select(self, amps: float):
         self.sel_amps = float(amps)
-        ids = self.root.get_screen('main').ids
-        if amps >= 6:
-            ids.slider.value = amps
-        ids.lbl_slider.text = f'{float(amps):.1f} A'
+        try:
+            ids = self.root.get_screen('main').ids
+            if amps >= 6:
+                ids.slider.value = amps
+            ids.lbl_slider.text = f'{float(amps):.1f} A'
+        except Exception:
+            pass
 
     def on_slider(self, value):
         self.sel_amps = round(value * 2) / 2
@@ -672,12 +730,13 @@ class WallboxApp(App):
 
     def apply(self):
         amps = self.sel_amps
-        self.root.get_screen('main').ids.lbl_hint.text = f'Setze {amps:.1f} A…'
+        try:
+            self.root.get_screen('main').ids.lbl_hint.text = f'Setze {amps:.1f} A...'
+        except Exception:
+            pass
         threading.Thread(target=self._apply_thread, args=(amps,), daemon=True).start()
 
     def _apply_thread(self, amps: float):
-        # If a backend URL is configured, switch it to manual first so it
-        # doesn't override our value on the next 30-second poll cycle.
         backend_switched = False
         if self._backend:
             try:
@@ -690,20 +749,26 @@ class WallboxApp(App):
                 urllib.request.urlopen(req, timeout=2)
                 backend_switched = True
             except Exception:
-                pass  # backend not reachable – write Modbus directly anyway
+                pass
 
-        ok = self.modbus.write_f32_x3(1012, amps)
+        try:
+            ok = self.modbus.write_f32_x3(1012, amps)
+        except Exception:
+            ok = False
         self._after_apply(ok, amps, backend_switched)
 
     @mainthread
     def _after_apply(self, ok: bool, amps: float, backend_switched: bool):
-        ids = self.root.get_screen('main').ids
-        if ok:
-            base = f'✓ {amps:.1f} A gesetzt' if amps > 0 else '✓ Ladung gestoppt'
-            ids.lbl_hint.text = base + ('  (Backend → Manuell)' if backend_switched else '')
-        else:
-            ids.lbl_hint.text = '✗ Fehler beim Schreiben'
-        Clock.schedule_once(lambda dt: self._clear_hint(), 4)
+        try:
+            ids = self.root.get_screen('main').ids
+            if ok:
+                base = f'{amps:.1f} A gesetzt' if amps > 0 else 'Ladung gestoppt'
+                ids.lbl_hint.text = base + ('  (Backend -> Manuell)' if backend_switched else '')
+            else:
+                ids.lbl_hint.text = 'Fehler beim Schreiben'
+            Clock.schedule_once(lambda dt: self._clear_hint(), 4)
+        except Exception:
+            pass
 
     def _clear_hint(self):
         try:
