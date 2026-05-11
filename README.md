@@ -262,6 +262,12 @@ sudo systemctl enable --now wallbox-controller
 
 ---
 
+## Entwicklung
+
+Dieses Projekt wurde mit [Claude Code](https://claude.com/claude-code) (Anthropic) erstellt.
+
+---
+
 ## Lizenz
 
 MIT
