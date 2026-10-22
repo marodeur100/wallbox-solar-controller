@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+import ladenachweis
 import neoom_client
 from controller import ControllerState, decide
 from ebox_client import EBoxModbusClient
@@ -182,6 +183,21 @@ async def _poll_loop() -> None:
         await asyncio.sleep(POLL_INTERVAL)
 
 
+NACHWEIS = cfg.get("nachweis") or {}
+NACHWEIS_ENABLED: bool = bool(NACHWEIS.get("enabled")) and bool(NACHWEIS.get("web_password"))
+
+
+async def _nachweis_loop() -> None:
+    loop = asyncio.get_running_loop()
+    interval = float(NACHWEIS.get("collect_interval_h", 6)) * 3600
+    while True:
+        try:
+            await loop.run_in_executor(None, ladenachweis.collect, cfg)
+        except Exception:
+            pass
+        await asyncio.sleep(interval)
+
+
 async def _broadcast() -> None:
     payload = json.dumps(app_state)
     for q in list(_subscribers):
@@ -200,6 +216,8 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _init_fallback_sync)
     asyncio.create_task(_poll_loop())
+    if NACHWEIS_ENABLED:
+        asyncio.create_task(_nachweis_loop())
     yield
 
 
@@ -318,6 +336,39 @@ async def set_manual(req: ManualRequest):
         app_state["ebox"] = ebox_status
     await _broadcast()
     return {"amps": req.amps}
+
+
+def _require_nachweis() -> None:
+    if not NACHWEIS_ENABLED:
+        raise HTTPException(404, "Ladenachweis ist in config.yaml nicht aktiviert")
+
+
+@app.get("/api/nachweis/status")
+async def nachweis_status():
+    _require_nachweis()
+    return ladenachweis.status
+
+
+@app.post("/api/nachweis/collect")
+async def nachweis_collect():
+    _require_nachweis()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, ladenachweis.collect, cfg)
+
+
+@app.get("/api/nachweis/report")
+async def nachweis_report(period: Optional[str] = None):
+    """PDF fuer 'YYYY-MM' oder 'YYYY' (Standard: Vormonat)."""
+    _require_nachweis()
+    loop = asyncio.get_running_loop()
+    try:
+        path = await loop.run_in_executor(
+            None, ladenachweis.build_report, cfg, period or ladenachweis.previous_month())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 
 @app.post("/api/shutdown")

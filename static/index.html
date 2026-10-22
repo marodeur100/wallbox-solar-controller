@@ -293,6 +293,36 @@ input[type="range"]::-moz-range-thumb {
 }
 .btn-exit:hover { background: #3a1a1a; border-color: #f87171; }
 
+/* ── Ladenachweis ── */
+.nw-wrap { position: relative; flex-shrink: 0; }
+.btn-nw {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-nw:hover { background: #161b22; border-color: #58a6ff; color: #c9d1d9; }
+.nw-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 230px; padding: 12px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+  color: #c9d1d9; font-size: 0.85rem;
+}
+.nw-pop input[type=month] {
+  padding: 6px; background: #0d1117; color: #c9d1d9;
+  border: 1px solid #30363d; border-radius: 6px; color-scheme: dark;
+}
+.nw-row { display: flex; gap: 8px; }
+.nw-row .btn-apply { flex: 1; padding: 7px 8px; }
+.nw-msg { color: #8b949e; font-size: 0.78rem; min-height: 1em; }
+.nw-msg.err { color: #f87171; }
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed;
@@ -377,6 +407,19 @@ input[type="range"]::-moz-range-thumb {
     <div class="mode-toggle">
       <button class="mode-btn active" id="btn-manual" onclick="setMode('manual')">Manuell</button>
       <button class="mode-btn" id="btn-auto" onclick="setMode('auto')">Automatisch (PV)</button>
+    </div>
+    <div class="nw-wrap hidden" id="nw-wrap">
+      <button class="btn-nw" onclick="toggleNachweis()">Ladenachweis</button>
+      <div class="nw-pop hidden" id="nw-pop">
+        <label for="nw-month">Monat</label>
+        <input type="month" id="nw-month">
+        <div class="nw-row">
+          <button class="btn-apply" onclick="downloadNachweis(false)">Monats-PDF</button>
+          <button class="btn-apply" onclick="downloadNachweis(true)">Jahres-PDF</button>
+        </div>
+        <button class="btn-nw" onclick="collectNachweis()">Jetzt Log sichern</button>
+        <div class="nw-msg" id="nw-msg"></div>
+      </div>
     </div>
     <button class="btn-exit" onclick="requestShutdown()">Beenden</button>
   </div>
@@ -763,6 +806,62 @@ async function doShutdown() {
     'height:100vh;background:#0d1117;color:#8b949e;font-family:sans-serif;font-size:1rem;">' +
     'Anwendung wurde beendet. Fenster kann geschlossen werden.</div>';
 }
+
+// ── Ladenachweis ──────────────────────────────────────────────────────────────
+
+function toggleNachweis() { $('nw-pop').classList.toggle('hidden'); }
+
+function _nwMsg(text, isErr) {
+  const el = $('nw-msg');
+  el.textContent = text;
+  el.classList.toggle('err', !!isErr);
+}
+
+async function downloadNachweis(wholeYear) {
+  const month = $('nw-month').value;
+  if (!month) { _nwMsg('Bitte Monat wählen.', true); return; }
+  const period = wholeYear ? month.slice(0, 4) : month;
+  _nwMsg('PDF wird erzeugt …');
+  try {
+    const r = await fetch('/api/nachweis/report?period=' + encodeURIComponent(period));
+    if (!r.ok) {
+      let detail = r.statusText;
+      try { detail = (await r.json()).detail || detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = `Ladenachweis_${period}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    _nwMsg('PDF heruntergeladen.');
+  } catch (e) {
+    _nwMsg('Fehler: ' + e.message, true);
+  }
+}
+
+async function collectNachweis() {
+  _nwMsg('Log wird gesichert …');
+  try {
+    const r = await fetch('/api/nachweis/collect', { method: 'POST' });
+    const s = await r.json();
+    if (s.last_error) throw new Error(s.last_error);
+    _nwMsg(`${s.sessions} Sessions gespeichert (${s.new_sessions} neu).`);
+  } catch (e) {
+    _nwMsg('Fehler: ' + e.message, true);
+  }
+}
+
+(async () => {
+  try {
+    const r = await fetch('/api/nachweis/status');
+    if (!r.ok) return;
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    $('nw-month').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    $('nw-wrap').classList.remove('hidden');
+  } catch (_) {}
+})();
 
 // ── SSE connection ────────────────────────────────────────────────────────────
 

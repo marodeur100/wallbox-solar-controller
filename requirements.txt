@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29.0
 pyyaml>=6.0
 requests>=2.31.0
 pymodbus>=3.0.0
+playwright>=1.45.0

@@ -24,3 +24,14 @@ server:
   host: "0.0.0.0"                 # Auf allen Interfaces lauschen (für Mini PC)
   port: 8000                      # Web-Interface Port
   poll_interval_s: 30             # Abfrageintervall NEOOM (Sekunden)
+
+nachweis:
+  enabled: true
+  web_user: "admin"
+  web_password: "DEIN_PASSWORT"        # WebConfig-Passwort der eBOX
+  collect_interval_h: 6           # Session-Log alle N Stunden sichern (eBOX speichert nur 30 Sessions)
+  owner: ""                       # Name fuer den Nachweis
+  vehicle: ""                     # Fahrzeug / Kennzeichen
+  wallbox: "Compleo eBOX"
+  price_eur_per_kwh: null         # z. B. 0.3400 (Vertragspreis oder Strompreispauschale)
+  meter_note: ""                  # z. B. Hinweis zum Zaehler (Eichung laut Typenschild)
